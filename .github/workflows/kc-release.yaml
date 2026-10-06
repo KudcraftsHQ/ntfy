@@ -1,0 +1,74 @@
+# kudcrafts: builds and pushes ghcr.io/kudcraftshq/ntfy:<tag> from Dockerfile.kudcrafts.
+# Triggered only by tags like v2.28.0-kc.1 (upstream's release.yaml only matches vX.Y.Z).
+name: kc-release
+on:
+  push:
+    tags:
+      - 'v*-kc.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to build (e.g. v2.28.0-kc.1); the checked-out ref is built'
+        required: true
+      arm64:
+        description: 'Also build linux/arm64 (slow: CGO under QEMU)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  packages: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Web tests
+        run: cd web && npm ci --no-audit --no-fund && npm test
+      - name: Go tests (catalog + touched packages)
+        run: |
+          mkdir -p server/docs server/site && touch server/docs/index.html server/site/app.html
+          go vet ./server/ ./user/ ./cmd/
+          go test ./user/ ./cmd/ -count=1
+          go test ./server/ -run 'Catalog|Account' -count=1
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event.inputs.arm64 }}" = "true" ]; then
+            echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
+          else
+            echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-qemu-action@v3
+        if: contains(steps.meta.outputs.platforms, 'arm64')
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.kudcrafts
+          platforms: ${{ steps.meta.outputs.platforms }}
+          push: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+          tags: ghcr.io/kudcraftshq/ntfy:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

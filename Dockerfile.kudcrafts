@@ -1,0 +1,50 @@
+# kudcrafts fork image: ntfy server + embedded web app, built from source.
+#
+#   docker build -f Dockerfile.kudcrafts --build-arg VERSION=2.28.0-kc.1 -t ntfy-kc .
+#
+# WEB_DIR selects the web client that is embedded as the site (default: the stock "web"). Any
+# client works as long as `npm ci && npm run build` produces build/index.html plus its assets;
+# see "Embedded site contract" in docs/kudcrafts/operations.md.
+ARG WEB_DIR=web
+ARG GO_VERSION=1.25
+
+# --- Stage 1: web app -> /site (same steps as the Makefile's web-build target)
+FROM node:24-alpine AS web
+ARG WEB_DIR
+WORKDIR /src
+COPY ${WEB_DIR}/package.json ${WEB_DIR}/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY ${WEB_DIR}/ ./
+RUN npm run build \
+ && mv build/index.html build/app.html \
+ && rm -f build/config.js \
+ && mv build /site
+
+# --- Stage 2: Go binary, static, with the site embedded
+FROM golang:${GO_VERSION}-alpine AS build
+ARG VERSION=dev
+ARG COMMIT=unknown
+RUN apk add --no-cache gcc musl-dev
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN rm -rf server/site && mkdir -p server/docs && touch server/docs/index.html
+COPY --from=web /site ./server/site
+RUN CGO_ENABLED=1 go build \
+      -o /ntfy \
+      -tags sqlite_omit_load_extension,osusergo,netgo \
+      -ldflags "-linkmode=external -extldflags=-static -s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=$(date +%s)" \
+      . \
+ && /ntfy --help >/dev/null
+
+# --- Stage 3: runtime, identical to the upstream Dockerfile
+FROM alpine
+LABEL org.opencontainers.image.source="https://github.com/KudcraftsHQ/ntfy"
+LABEL org.opencontainers.image.title="ntfy (kudcrafts)"
+LABEL org.opencontainers.image.description="ntfy with the kudcrafts app/topic catalog"
+LABEL org.opencontainers.image.licenses="Apache-2.0, GPL-2.0"
+RUN apk add --no-cache tzdata
+COPY --from=build /ntfy /usr/bin/ntfy
+EXPOSE 80/tcp
+ENTRYPOINT ["ntfy"]

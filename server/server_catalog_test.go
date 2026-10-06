@@ -390,3 +390,15 @@ func TestCatalog_SyncAndDisallowedTopicsNotRegistered(t *testing.T) {
 func authParam(name string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(util.BasicAuth(name, name)))
 }
+
+func TestCatalog_JSONPublishWithHeaders(t *testing.T) {
+	s := newTestCatalogServer(t)
+	h := catalogAuth("facemap")
+	h["X-App-Name"] = "FaceMap"
+	h["X-App-Icon"] = testFaceMapIcon
+	rr := request(t, s, "POST", "/", `{"topic":"facemap-orders","message":"hi","title":"Paid"}`, h)
+	require.Equal(t, 200, rr.Code, rr.Body.String())
+	require.Equal(t, testFaceMapIcon, toMessage(t, rr.Body.String()).Icon)
+	require.Nil(t, s.catalog.reload())
+	require.Equal(t, "FaceMap", getCatalog(t, s, "admin").Apps[0].Name)
+}
