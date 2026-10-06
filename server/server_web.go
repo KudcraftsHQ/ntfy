@@ -86,6 +86,7 @@ func (s *Server) configResponse() *apiConfigResponse {
 		EnableResetPassword: s.config.SMTPSenderFrom != "" && s.config.BaseURL != "", // Reset links need SMTP + an absolute base-url
 		EnableReservations:  s.config.EnableReservations,
 		EnableWebPush:       s.config.WebPushPublicKey != "",
+		EnableCatalog:       s.catalog != nil, // kudcrafts: catalog
 		BillingContact:      s.config.BillingContact,
 		WebPushPublicKey:    s.config.WebPushPublicKey,
 		DisallowedTopics:    s.config.DisallowedTopics,

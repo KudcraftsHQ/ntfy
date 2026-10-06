@@ -362,6 +362,7 @@ type apiConfigResponse struct {
 	EnableResetPassword bool     `json:"enable_reset_password"`
 	EnableReservations  bool     `json:"enable_reservations"`
 	EnableWebPush       bool     `json:"enable_web_push"`
+	EnableCatalog       bool     `json:"enable_catalog"` // kudcrafts: catalog
 	BillingContact      string   `json:"billing_contact"`
 	WebPushPublicKey    string   `json:"web_push_public_key"`
 	DisallowedTopics    []string `json:"disallowed_topics"`
