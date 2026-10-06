@@ -11,7 +11,10 @@ class Notifier {
   lastSoundPlayedAt = 0;
 
   async notify(subscription, notification) {
-    await this.playSound();
+    if (subscription.sound !== "silent") {
+      // kudcrafts: catalog -- sound class "silent" mutes the sound; other classes use the global sound
+      await this.playSound();
+    }
 
     if (!this.supported()) {
       return;
@@ -30,6 +33,8 @@ class Notifier {
         topicRoute: new URL(routes.forSubscription(subscription), window.location.origin).toString(),
         baseUrl: subscription.baseUrl,
         topic: subscription.topic,
+        appIcon: subscription.appIcon, // kudcrafts: catalog
+        sound: subscription.sound, // kudcrafts: catalog
       }),
     );
   }

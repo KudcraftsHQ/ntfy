@@ -109,3 +109,65 @@ describe("SubscriptionManager.syncFromRemote", () => {
     expect(db.rows.get("https://ntfy.sh/mytopic").displayName).toBe("My Topic");
   });
 });
+
+// kudcrafts: catalog
+describe("SubscriptionManager.syncFromCatalog", () => {
+  const catalog = (topics) => ({
+    version: 1,
+    base_url: baseUrl,
+    history_days: 90,
+    sync_topic: "st_x",
+    apps: [{ id: "facemap", name: "FaceMap", icon: "https://facemap.fyi/icon.png", sound: "alert", topics }],
+  });
+
+  it("adds missing topics and decorates them with app metadata", async () => {
+    const db = fakeDb();
+    const manager = new SubscriptionManager(db);
+    await manager.syncFromCatalog(catalog([{ topic: "facemap-orders", name: "Orders", sound: "urgent", permission: "read-only" }]));
+
+    const stored = db.rows.get("https://ntfy.sh/facemap-orders");
+    expect(stored).toMatchObject({
+      catalog: true,
+      appId: "facemap",
+      appName: "FaceMap",
+      appIcon: "https://facemap.fyi/icon.png",
+      sound: "urgent",
+      catalogName: "Orders",
+      mutedUntil: 0,
+    });
+  });
+
+  it("keeps local state (mute, rename) when decorating an existing subscription", async () => {
+    const db = fakeDb();
+    const manager = new SubscriptionManager(db);
+    await manager.upsert(baseUrl, "facemap-orders", { displayName: "Mine" });
+    await manager.setMutedUntil("https://ntfy.sh/facemap-orders", 1);
+
+    await manager.syncFromCatalog(catalog([{ topic: "facemap-orders", name: "", sound: "alert", permission: "read-only" }]));
+
+    const stored = db.rows.get("https://ntfy.sh/facemap-orders");
+    expect(stored.displayName).toBe("Mine");
+    expect(stored.mutedUntil).toBe(1);
+    expect(stored.catalogName).toBeNull();
+    expect(stored.appId).toBe("facemap");
+  });
+
+  it("undecorates subscriptions that left the catalog and never touches others", async () => {
+    const db = fakeDb();
+    const manager = new SubscriptionManager(db);
+    await manager.upsert(baseUrl, "own-topic");
+    await manager.syncFromCatalog(catalog([{ topic: "facemap-orders", name: "Orders", sound: "alert", permission: "read-only" }]));
+    await manager.syncFromCatalog(catalog([]));
+
+    expect(db.rows.get("https://ntfy.sh/facemap-orders")).toMatchObject({ catalog: false, appId: null, appIcon: null, sound: null });
+    expect(db.rows.get("https://ntfy.sh/own-topic").catalog).toBeUndefined();
+  });
+
+  it("does nothing for a null catalog (server without catalog)", async () => {
+    const db = fakeDb();
+    const manager = new SubscriptionManager(db);
+    await manager.upsert(baseUrl, "facemap-orders", { catalog: true, appId: "facemap" });
+    await manager.syncFromCatalog(null);
+    expect(db.rows.get("https://ntfy.sh/facemap-orders").appId).toBe("facemap");
+  });
+});

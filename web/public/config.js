@@ -16,6 +16,7 @@ var config = {
   enable_emails: true,
   enable_calls: true,
   enable_web_push: true,
+  enable_catalog: false, // kudcrafts: catalog
   billing_contact: "",
   web_push_public_key: "",
   disallowed_topics: ["docs", "static", "file", "app", "account", "settings", "signup", "login", "v1"],

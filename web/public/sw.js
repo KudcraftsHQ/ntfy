@@ -57,10 +57,12 @@ const handlePushMessage = async (data) => {
   await self.registration.showNotification(
     ...toNotificationParams({
       message,
-      defaultTitle: message.topic,
+      defaultTitle: subscription.displayName || subscription.catalogName || message.topic, // kudcrafts: catalog
       topicRoute: new URL(message.topic, self.location.origin).toString(),
       baseUrl: subscription.baseUrl,
       topic: subscription.topic,
+      appIcon: subscription.appIcon, // kudcrafts: catalog
+      sound: subscription.sound, // kudcrafts: catalog
     }),
   );
 
@@ -87,7 +89,10 @@ const handlePushMessage = async (data) => {
   self.navigator.setAppBadge?.(badgeCount);
 
   // Broadcast the message to potentially play a sound
-  broadcastChannel.postMessage(message);
+  if (subscription.sound !== "silent") {
+    // kudcrafts: catalog
+    broadcastChannel.postMessage(message);
+  }
 
   await maybeExtendToken();
 };

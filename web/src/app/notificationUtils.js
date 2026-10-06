@@ -57,7 +57,8 @@ export const badge = "/static/images/ntfy-mask.svg";
  */
 export const notificationTag = (baseUrl, topic, sequenceId) => `${baseUrl}/${topic}/${sequenceId}`;
 
-export const toNotificationParams = ({ message, defaultTitle, topicRoute, baseUrl, topic }) => {
+// kudcrafts: catalog -- appIcon (catalog app icon) and sound (catalog sound class) are optional
+export const toNotificationParams = ({ message, defaultTitle, topicRoute, baseUrl, topic, appIcon, sound }) => {
   const image = isImage(message.attachment) ? message.attachment.url : undefined;
   const sequenceId = message.sequence_id || message.id;
   const tag = notificationTag(baseUrl, topic, sequenceId);
@@ -69,12 +70,12 @@ export const toNotificationParams = ({ message, defaultTitle, topicRoute, baseUr
     {
       body: formatMessage(message),
       badge,
-      icon,
+      icon: message.icon || appIcon || icon, // kudcrafts: catalog -- the server injects the app icon into message.icon
       image,
       timestamp: message.time * 1000,
       tag, // Scoped by baseUrl/topic/sequenceId to avoid cross-topic collisions
       renotify: true,
-      silent: false,
+      silent: sound === "silent", // kudcrafts: catalog
       // This is used by the notification onclick event
       data: {
         subscriptionId,
