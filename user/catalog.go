@@ -78,9 +78,13 @@ const (
 	catalogDeleteTopicQuery      = `DELETE FROM catalog_topic WHERE topic = ?`
 	catalogMaxNameLength         = 64
 	catalogMaxIconLength         = 512
-	CatalogSoundDefault          = "default"
-	CatalogSoundInherit          = "" // Topic sound: inherit from the app
 	catalogSyncTopicPrefixForApp = syncTopicPrefix
+)
+
+// Sound class values with a special meaning
+const (
+	CatalogSoundDefault = "default" // The default sound class of a new app
+	CatalogSoundInherit = ""        // Topic sound: inherit from the app
 )
 
 var (
@@ -88,7 +92,11 @@ var (
 	catalogAppIDRegex   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 	catalogNameBadChars = "<>"
 
-	// ErrCatalogInvalidAppID and friends are returned by the validators and the store
+	errCatalogNilArgument = errors.New("nil argument")
+)
+
+// Errors returned by the catalog validators and the catalog store
+var (
 	ErrCatalogInvalidAppID = errors.New("invalid catalog app id")
 	ErrCatalogInvalidName  = errors.New("invalid catalog name")
 	ErrCatalogInvalidIcon  = errors.New("invalid catalog icon URL (https only, <=512 chars)")
@@ -98,7 +106,6 @@ var (
 	ErrCatalogAppHasTopics = errors.New("app still has topics")
 	ErrCatalogNotSupported = errors.New("the catalog requires a SQLite user database (auth-file)")
 	ErrCatalogInvalidTopic = errors.New("invalid topic")
-	errCatalogNilArgument  = errors.New("nil argument")
 )
 
 // CatalogApp is an app in the catalog, e.g. "facemap", which groups one or more topics
@@ -314,7 +321,7 @@ func ValidateCatalogName(name string) (string, error) {
 		return "", ErrCatalogInvalidName
 	}
 	cleaned := strings.TrimSpace(strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) { // control and format chars (RTL override, zero-width)
 			return -1
 		}
 		return r

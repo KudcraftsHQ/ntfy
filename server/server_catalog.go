@@ -17,8 +17,10 @@ import (
 	"net/netip"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"heckel.io/ntfy/v2/log"
@@ -32,6 +34,8 @@ const (
 	apiCatalogPath             = "/v1/catalog"
 	catalogReloadInterval      = 30 * time.Second
 	catalogTouchInterval       = 10 * time.Minute
+	catalogReloadDebounce      = 2 * time.Second // publish-driven reloads are coalesced into one per window
+	catalogMetadataInterval    = time.Minute     // a publisher may change an existing row's metadata once per minute
 	catalogPermissionRead      = "read-only"
 	catalogPermissionReadWrite = "read-write"
 	catalogSoundInheritKeyword = "inherit"
@@ -109,6 +113,8 @@ type catalog struct {
 	reloadMu  sync.Mutex        // serializes reload()
 	touchMu   sync.Mutex
 	lastTouch map[string]int64 // topic -> unix seconds of the last TouchTopic
+	lastMeta  map[string]int64 // "app:<id>" or "topic:<topic>" -> unix seconds of the last publisher metadata change
+	pending   atomic.Bool      // a debounced reload is scheduled
 }
 
 // catalogViewEntry is one readable topic as seen by a user; it is what clients render
@@ -135,6 +141,7 @@ func newCatalog(s *Server, store *user.CatalogStore) (*catalog, error) {
 		topics:    make(map[string]*user.CatalogTopic),
 		views:     make(map[string]string),
 		lastTouch: make(map[string]int64),
+		lastMeta:  make(map[string]int64),
 	}
 	if err := c.reload(); err != nil {
 		return nil, err
@@ -158,12 +165,31 @@ func (c *catalog) loop(stop <-chan bool) {
 	}
 }
 
+// reloadAsync schedules a reload in catalogReloadDebounce, coalescing bursts of publish-driven
+// changes into a single reload (and a single round of sync events).
 func (c *catalog) reloadAsync() {
-	go func() {
+	if !c.pending.CompareAndSwap(false, true) {
+		return // already scheduled; that reload will see this change
+	}
+	time.AfterFunc(catalogReloadDebounce, func() {
+		c.pending.Store(false) // before reloading, so changes made during the reload schedule another
 		if err := c.reload(); err != nil {
 			log.Tag(tagCatalog).Err(err).Warn("Error reloading catalog")
 		}
-	}()
+	})
+}
+
+// allowMetadataChange rate-limits publisher-driven changes to an existing row, so a publisher
+// alternating header values cannot force a reload and sync fan-out on every publish.
+func (c *catalog) allowMetadataChange(key string) bool {
+	now := time.Now().Unix()
+	c.touchMu.Lock()
+	defer c.touchMu.Unlock()
+	if now-c.lastMeta[key] < int64(catalogMetadataInterval.Seconds()) {
+		return false
+	}
+	c.lastMeta[key] = now
+	return true
 }
 
 // reload reads both tables, swaps the snapshot, bumps the version if the content changed, and
@@ -284,8 +310,11 @@ func (c *catalog) viewWithHidden(u *user.User, includeHidden bool) []*catalogVie
 	return entries
 }
 
-func (c *catalog) viewHash(entries []*catalogViewEntry) string {
+func (c *catalog) viewHash(entries []*catalogViewEntry, extra ...string) string {
 	h := sha256.New()
+	for _, x := range extra {
+		fmt.Fprintf(h, "x\x00%s\n", x)
+	}
 	for _, e := range entries {
 		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\n", e.topic.Topic, e.app.ID, e.app.Name, e.app.Icon, e.app.Sound, e.topic.Name, e.sound, e.permission)
 	}
@@ -382,7 +411,10 @@ func (c *catalog) onPublish(r *http.Request, v *visitor, topic string, m *model.
 		if appSound != "" && appSound != existingApp.Sound {
 			updated.Sound, changed = appSound, true
 		}
-		if changed {
+		if changed && !c.allowMetadataChange("app:"+appID) {
+			ev.Debug("Ignoring catalog app metadata change: changed less than a minute ago")
+			changed = false
+		} else if changed {
 			if err := c.store.UpsertApp(&updated, false); err != nil {
 				ev.Err(err).Warn("Error updating catalog app")
 			} else {
@@ -419,7 +451,9 @@ func (c *catalog) onPublish(r *http.Request, v *visitor, topic string, m *model.
 		if topicSound != "" && topicSound != existingTopic.Sound {
 			updated.Sound, topicChanged = topicSound, true
 		}
-		if topicChanged {
+		if topicChanged && !c.allowMetadataChange("topic:"+topic) {
+			ev.Debug("Ignoring catalog topic metadata change: changed less than a minute ago")
+		} else if topicChanged {
 			if err := c.store.UpsertTopic(&updated, false); err != nil {
 				ev.Err(err).Warn("Error updating catalog topic")
 			} else {
@@ -513,22 +547,24 @@ func (s *Server) handleCatalogGet(w http.ResponseWriter, r *http.Request, v *vis
 	entries := s.catalog.viewWithHidden(u, all)
 	// The ETag is a hash of exactly what this user sees (not the global version), so that an
 	// ACL-only change yields a 200, and a change to topics this user cannot see yields a 304.
-	etag := fmt.Sprintf(`"%s"`, s.catalog.viewHash(entries)[:20])
+	// The non-view fields of the response are part of it too, so a config change is never a 304.
+	historyDays := catalogHistoryDays(s.config.CacheDuration)
+	etag := fmt.Sprintf(`"%s"`, s.catalog.viewHash(entries, s.config.BaseURL, u.SyncTopic, strconv.Itoa(historyDays))[:20])
 	if all {
-		etag = fmt.Sprintf(`"%d-all"`, version)
+		etag = fmt.Sprintf(`"%d-%d-all"`, version, historyDays)
 	}
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Access-Control-Allow-Origin", s.config.AccessControlAllowOrigin)
 	w.Header().Set("Access-Control-Expose-Headers", "ETag")
-	if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+	if catalogETagMatches(r.Header.Get("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return nil
 	}
 	response := &apiCatalogResponse{
 		Version:     version,
 		BaseURL:     s.config.BaseURL,
-		HistoryDays: int(s.config.CacheDuration / (24 * time.Hour)),
+		HistoryDays: historyDays,
 		SyncTopic:   u.SyncTopic,
 		Apps:        make([]*apiCatalogApp, 0),
 	}
@@ -723,4 +759,28 @@ func (s *Server) handleCatalogRoute(w http.ResponseWriter, r *http.Request, v *v
 
 func catalogBool(b bool) *bool {
 	return &b
+}
+
+// catalogHistoryDays is cache-duration in whole days, rounded up, and at least 1: clients prune
+// their local history to it, so 0 (e.g. the 12h default) must never be sent.
+func catalogHistoryDays(d time.Duration) int {
+	days := int((d + 24*time.Hour - 1) / (24 * time.Hour))
+	if days < 1 {
+		return 1
+	}
+	return days
+}
+
+// catalogETagMatches implements If-None-Match: a comma-separated list, weak comparison (W/), or "*"
+func catalogETagMatches(header, etag string) bool {
+	if header == "" {
+		return false
+	}
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "W/")
+		if candidate == "*" || candidate == etag {
+			return true
+		}
+	}
+	return false
 }

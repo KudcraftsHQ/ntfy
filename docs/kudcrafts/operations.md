@@ -15,12 +15,13 @@ Fork branch `kudcrafts` of KudcraftsHQ/ntfy, cut from upstream tag `v2.28.0`. Im
 
 ## Deploy (Coolify service `ntfy`)
 
-1. Release: push a tag `v2.28.0-kc.N` on the `kudcrafts` branch. `.github/workflows/kc-release.yaml` runs the
-   tests and pushes `ghcr.io/kudcraftshq/ntfy:v2.28.0-kc.N` (amd64; arm64 via manual dispatch).
+1. Release: every PR and push to `kudcrafts` already runs `kc-release.yaml`'s `docker-build` job (build without
+   push + smoke run). Push a tag `v2.28.0-kc.N` on `kudcrafts`: the workflow tests and pushes
+   `ghcr.io/kudcraftshq/ntfy:v2.28.0-kc.N` (amd64, stock `web`; arm64 or `web_dir=web-kc` via manual dispatch).
    The package must be public, or Coolify needs a ghcr pull credential.
 2. Coolify: change the image from `binwiederhier/ntfy:v2.28.0` to `ghcr.io/kudcraftshq/ntfy:v2.28.0-kc.N`,
    catalog flag **off**. Redeploy. Check `https://ntfy.kudcrafts.com/v1/health` and that publishing still works.
-3. Add `NTFY_ENABLE_CATALOG=true` and `NTFY_CACHE_DURATION=2160h` (`NTFY_BASE_URL` is already set). Redeploy.
+3. Add `NTFY_ENABLE_CATALOG=true` **and** `NTFY_CACHE_DURATION=2160h` in the same redeploy (`NTFY_BASE_URL` is already set).
 4. Verify:
    ```bash
    curl -s -u hammas:… https://ntfy.kudcrafts.com/v1/catalog | jq .
@@ -117,6 +118,18 @@ ntfy catalog users        # check what partner will see
 Clients sign in once and mint a per-device token (`POST /v1/account/token`); revoke it in the web app under
 Account → Access tokens.
 
+## Notes
+
+- `/docs` serves an empty page in this image: the mkdocs site is not built (`server/docs/index.html` is a stub).
+  Use https://docs.ntfy.sh.
+- Renaming a catalog topic in the stock web app stores a real account subscription for it, so the rename
+  persists. That subscription outlives the catalog entry (if the topic is later hidden or removed, the user keeps
+  it until they unsubscribe).
+- Publisher header changes are applied at most once per minute per app/topic, and reach clients after a 2 s
+  debounced reload (or the 30 s loop). Admin edits (CLI/API) are not limited.
+- `history_days` in `/v1/catalog` is `cache-duration` in days, rounded up, minimum 1. Set `NTFY_CACHE_DURATION=2160h`
+  in the same redeploy that enables the catalog, so clients never prune to 1 day.
+
 ## Monitoring history size
 
 ```bash
@@ -128,9 +141,13 @@ sqlite3 /var/cache/ntfy/cache.db 'select count(*) from messages'
 
 `Dockerfile.kudcrafts` takes `--build-arg WEB_DIR=<dir>` (default `web`). For any `WEB_DIR`:
 
-1. `npm ci` then `npm run build` must produce `build/` containing `index.html` and its assets.
-2. The build stage renames `build/index.html` → `build/app.html`, deletes `build/config.js` if present, and
-   embeds `build/` as `server/site/` (Go `//go:embed site`).
+1. Build, chosen by lockfile:
+   - `bun.lock` present (web-kc): `bun install --frozen-lockfile && bun run build:site`. `build:site` must leave
+     the finished site in `../server/site` (relative to `WEB_DIR`; the Dockerfile creates `../server/`).
+   - otherwise (stock web): `npm ci && npm run build`, which must produce `build/index.html` plus assets; the
+     Dockerfile then does the moves in step 2.
+2. Either way the result is the Makefile's `web-build` layout: `build/index.html` → `app.html`, `config.js`
+   removed, embedded as `server/site/` (Go `//go:embed site`).
 3. The server serves **only** these paths from the site: `/app.html`, `/sw.js`, `/sw.js.map` and anything under
    `/static/`. So every asset (JS, CSS, images, fonts, favicon) must live under `/static/…` (Vite:
    `build.assetsDir: "static/media"`; public files under `public/static/`).

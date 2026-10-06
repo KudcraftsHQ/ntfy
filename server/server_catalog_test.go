@@ -402,3 +402,33 @@ func TestCatalog_JSONPublishWithHeaders(t *testing.T) {
 	require.Nil(t, s.catalog.reload())
 	require.Equal(t, "FaceMap", getCatalog(t, s, "admin").Apps[0].Name)
 }
+
+func TestCatalog_PublisherMetadataRateLimitedAndReloadDebounced(t *testing.T) {
+	s := newTestCatalogServer(t)
+	publishWith(t, s, "facemap-orders", "facemap", map[string]string{"X-Display-Name": "A"}) // create
+	publishWith(t, s, "facemap-orders", "facemap", map[string]string{"X-Display-Name": "B"}) // first change: allowed
+	publishWith(t, s, "facemap-orders", "facemap", map[string]string{"X-Display-Name": "C"}) // within a minute: ignored
+	require.True(t, s.catalog.pending.Load())                                                // one debounced reload scheduled
+	require.Eventually(t, func() bool { return !s.catalog.pending.Load() }, 5*time.Second, 50*time.Millisecond)
+	require.Eventually(t, func() bool {
+		c := getCatalog(t, s, "admin")
+		return len(c.Apps) == 1 && c.Apps[0].Topics[0].Name == "B"
+	}, 5*time.Second, 50*time.Millisecond)
+}
+
+func TestCatalog_HistoryDaysAndWeakETag(t *testing.T) {
+	require.Equal(t, 1, catalogHistoryDays(12*time.Hour))
+	require.Equal(t, 1, catalogHistoryDays(0))
+	require.Equal(t, 90, catalogHistoryDays(2160*time.Hour))
+	require.Equal(t, 2, catalogHistoryDays(25*time.Hour))
+
+	s := newTestCatalogServer(t, func(c *Config) { c.CacheDuration = 12 * time.Hour })
+	require.Equal(t, 1, getCatalog(t, s, "admin").HistoryDays)
+	rr := request(t, s, "GET", "/v1/catalog", "", catalogAuth("admin"))
+	etag := rr.Header().Get("ETag")
+	h := catalogAuth("admin")
+	h["If-None-Match"] = `"other", W/` + etag
+	require.Equal(t, 304, request(t, s, "GET", "/v1/catalog", "", h).Code)
+	h["If-None-Match"] = `"other"`
+	require.Equal(t, 200, request(t, s, "GET", "/v1/catalog", "", h).Code)
+}

@@ -1,27 +1,40 @@
 # kudcrafts fork image: ntfy server + embedded web app, built from source.
 #
 #   docker build -f Dockerfile.kudcrafts --build-arg VERSION=2.28.0-kc.1 -t ntfy-kc .
+#   docker build -f Dockerfile.kudcrafts --build-arg WEB_DIR=web-kc ...   # the Kudcrafts web client
 #
-# WEB_DIR selects the web client that is embedded as the site (default: the stock "web"). Any
-# client works as long as `npm ci && npm run build` produces build/index.html plus its assets;
-# see "Embedded site contract" in docs/kudcrafts/operations.md.
+# WEB_DIR selects the web client embedded as the site (default: the stock "web").
+#  - bun.lock present (web-kc): bun install --frozen-lockfile && bun run build:site, which moves the
+#    build to ../server/site itself (index.html -> app.html, config.js removed).
+#  - otherwise (web): npm ci && npm run build, then the Makefile's web-build moves.
+# See "Embedded site contract" in docs/kudcrafts/operations.md.
 ARG WEB_DIR=web
-ARG GO_VERSION=1.25
 
-# --- Stage 1: web app -> /site (same steps as the Makefile's web-build target)
+# --- Stage 1: web app -> /site
+FROM oven/bun:1-alpine AS bun
 FROM node:24-alpine AS web
 ARG WEB_DIR
-WORKDIR /src
-COPY ${WEB_DIR}/package.json ${WEB_DIR}/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN apk add --no-cache libstdc++ libgcc
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+WORKDIR /src/${WEB_DIR}
+COPY ${WEB_DIR}/package.json ${WEB_DIR}/*lock* ./
+RUN if [ -f bun.lock ]; then bun install --frozen-lockfile; else npm ci --no-audit --no-fund; fi
 COPY ${WEB_DIR}/ ./
-RUN npm run build \
- && mv build/index.html build/app.html \
- && rm -f build/config.js \
- && mv build /site
+RUN mkdir -p /src/server \
+ && if [ -f bun.lock ]; then \
+      bun run build:site; \
+    else \
+      npm run build \
+      && mv build/index.html build/app.html \
+      && rm -f build/config.js \
+      && rm -rf /src/server/site \
+      && mv build /src/server/site; \
+    fi \
+ && test -f /src/server/site/app.html \
+ && mv /src/server/site /site
 
 # --- Stage 2: Go binary, static, with the site embedded
-FROM golang:${GO_VERSION}-alpine AS build
+FROM golang:1.25.8-alpine AS build
 ARG VERSION=dev
 ARG COMMIT=unknown
 RUN apk add --no-cache gcc musl-dev
@@ -34,7 +47,7 @@ COPY --from=web /site ./server/site
 RUN CGO_ENABLED=1 go build \
       -o /ntfy \
       -tags sqlite_omit_load_extension,osusergo,netgo \
-      -ldflags "-linkmode=external -extldflags=-static -s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=$(date +%s)" \
+      -ldflags "-linkmode=external -extldflags=-static -s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       . \
  && /ntfy --help >/dev/null
 

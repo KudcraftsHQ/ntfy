@@ -1,15 +1,23 @@
-# kudcrafts: builds and pushes ghcr.io/kudcraftshq/ntfy:<tag> from Dockerfile.kudcrafts.
-# Triggered only by tags like v2.28.0-kc.1 (upstream's release.yaml only matches vX.Y.Z).
+# kudcrafts: tests + image build for the fork.
+# - pull requests and pushes to the kudcrafts branch: tests, then `docker build` (no push) of
+#   Dockerfile.kudcrafts for every web client present, plus a smoke run of the image.
+# - tags v*-kc.* (or manual dispatch): tests, then build and push ghcr.io/kudcraftshq/ntfy:<tag>.
+#   Upstream's release.yaml only matches vX.Y.Z, so it never fires on our tags.
 name: kc-release
 on:
   push:
+    branches: [ kudcrafts ]
     tags:
       - 'v*-kc.*'
+  pull_request:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag to build (e.g. v2.28.0-kc.1); the checked-out ref is built'
+        description: 'Image tag to build and push (e.g. v2.28.0-kc.1); the checked-out ref is built'
         required: true
+      web_dir:
+        description: 'Web client to embed (web or web-kc)'
+        default: 'web'
       arm64:
         description: 'Also build linux/arm64 (slow: CGO under QEMU)'
         type: boolean
@@ -28,25 +36,80 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Web tests
+      - name: Web tests (stock web)
         run: cd web && npm ci --no-audit --no-fund && npm test
+      - uses: oven-sh/setup-bun@v2
+        if: hashFiles('web-kc/bun.lock') != ''
+      - name: Web tests (web-kc)
+        if: hashFiles('web-kc/bun.lock') != ''
+        run: cd web-kc && bun install --frozen-lockfile && bun run test
       - name: Go tests (catalog + touched packages)
         run: |
           mkdir -p server/docs server/site && touch server/docs/index.html server/site/app.html
           go vet ./server/ ./user/ ./cmd/
           go test ./user/ ./cmd/ -count=1
           go test ./server/ -run 'Catalog|Account' -count=1
+
+  docker-build:
+    if: github.event_name == 'pull_request' || github.ref_type == 'branch'
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        web_dir: [ web, web-kc ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check that ${{ matrix.web_dir }} exists
+        id: present
+        run: |
+          if [ -f "${{ matrix.web_dir }}/package.json" ]; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "${{ matrix.web_dir }}/ not on this ref, skipping"; fi
+      - uses: docker/setup-buildx-action@v3
+        if: steps.present.outputs.yes
+      - name: docker build (no push)
+        if: steps.present.outputs.yes
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.kudcrafts
+          push: false
+          load: true
+          build-args: |
+            VERSION=0.0.0-kc.ci
+            COMMIT=${{ github.sha }}
+            WEB_DIR=${{ matrix.web_dir }}
+          tags: ntfy-kc:ci
+          cache-from: type=gha,scope=${{ matrix.web_dir }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.web_dir }}
+      - name: Smoke test the image
+        if: steps.present.outputs.yes
+        run: |
+          docker run -d --name ntfy -p 8080:80 ntfy-kc:ci serve \
+            --listen-http :80 --base-url http://localhost:8080 \
+            --auth-file /tmp/user.db --auth-default-access deny-all --enable-catalog
+          for i in $(seq 1 30); do curl -sf http://localhost:8080/v1/health && break; sleep 1; done
+          curl -sf http://localhost:8080/v1/health | grep '"healthy":true'
+          curl -sf http://localhost:8080/config.js | grep '"enable_catalog": true'
+          curl -sf http://localhost:8080/ | grep -qi '<html'
+          curl -sf -o /dev/null http://localhost:8080/sw.js
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/v1/catalog)" = "401"
+          docker exec ntfy ntfy catalog --auth-file /tmp/user.db | grep -q 'catalog is empty'
+          docker logs ntfy 2>&1 | tail -5
+          docker rm -f ntfy
+
   image:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve tag and version
+      - name: Resolve tag, version, platforms
         id: meta
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "web_dir=${{ github.event.inputs.web_dir || 'web' }}" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event.inputs.arm64 }}" = "true" ]; then
             echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
           else
@@ -69,6 +132,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ github.sha }}
+            WEB_DIR=${{ steps.meta.outputs.web_dir }}
           tags: ghcr.io/kudcraftshq/ntfy:${{ steps.meta.outputs.tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ steps.meta.outputs.web_dir }}
+          cache-to: type=gha,mode=max,scope=${{ steps.meta.outputs.web_dir }}

@@ -323,10 +323,10 @@ Identical to section 8 items 2–4: `CatalogSync.Reconcile` (pure, in `NtfyBar.C
 
 ## 14. Shared interface contract (all builders)
 
-1. `GET /v1/catalog` JSON exactly as 3.1; `version` monotonic ms; `history_days` int; `sync_topic` string; sounds ∈ `silent|default|alert|urgent`, always resolved per topic.
+1. `GET /v1/catalog` JSON exactly as 3.1; `version` monotonic ms; `history_days` int ≥ 1; `sync_topic` string; sounds ∈ `silent|default|alert|urgent`, always resolved per topic.
 2. `GET /v1/account.subscriptions` includes virtual catalog entries (`display_name` = topic name or `null`).
 3. Sync signal: a message on `sync_topic` whose body is `{"event":"sync"}` → client refetches `/v1/catalog` (and account, where applicable). Clients also refetch every 15 min with `If-None-Match`, on launch, on resume/wake, and on every stream (re)connect.
-4. Token minting: `POST /v1/account/token` with Basic auth, body `{"label":"<client>-<device>"}` → `{"token":"tk_…"}`; send as `Authorization: Bearer tk_…`.
+4. Token minting: `POST /v1/account/token` with Basic auth, body `{"label":"<client>-<device>","expires":0}` → `{"token":"tk_…"}`; send as `Authorization: Bearer tk_…`. **`"expires":0` is required**: without it the server applies its 72 h default (`tokenExpiryDuration`) and the device silently goes dark on day 3. `0` = never expires; the token stays revocable per device in Account → Access tokens. (rev 2.1, from the pre-deploy review)
 5. Client reconcile rules: only on HTTP 200; add missing as managed; update metadata on existing, keep user mute/enable/rename; remove managed entries no longer listed; never touch unmanaged entries.
 6. Publish headers (publishers): `X-App`, `X-App-Name`, `X-App-Icon`, `X-App-Sound`, `X-Display-Name`, `X-Sound`.
 7. Display name precedence everywhere: user rename → catalog topic name → topic id. Icon precedence in notifications: message `icon` (server-injected) → app icon → platform default.

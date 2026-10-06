@@ -129,6 +129,9 @@ func TestCatalog_Validators(t *testing.T) {
 		_, err := ValidateCatalogName(n)
 		require.Equal(t, ErrCatalogInvalidName, err, n)
 	}
+	name, err = ValidateCatalogName("Face\u202eMap\u200b")
+	require.Nil(t, err)
+	require.Equal(t, "FaceMap", name)
 	_, err = ValidateCatalogName(strings.Repeat("é", 64))
 	require.Nil(t, err)
 
