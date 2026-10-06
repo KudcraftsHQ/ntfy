@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { ArrowLeft, Check, Copy, ExternalLink, Mail, MailOpen, Trash2, X, Zap } from "lucide-react";
 import { useState } from "react";
 import { runAction, visibleActions } from "../lib/actions";
+import { openSafe, safeUrl } from "../lib/url";
 import { topicLabel } from "../lib/catalog";
 import { deleteMessage, markRead, markUnread } from "../lib/db";
 import { emojiTags, plainTags } from "../lib/emoji";
@@ -28,8 +29,9 @@ export function MessageDetail({ m, app, topic, onClose }: { m: StoredMessage; ap
   const emojis = emojiTags(m.tags).join(" ");
   const chips = plainTags(m.tags);
   // A "view" action pointing at the click URL would just duplicate the Open button.
-  const actions = visibleActions(m.actions).filter((a) => !(a.action === "view" && a.url === m.click));
+  const actions = visibleActions(m.actions).filter((a) => !(a.action === "view" && safeUrl(a.url) === click));
   const pm = priorityMeta(m.priority);
+  const click = safeUrl(m.click);
 
   const copy = async () => {
     await navigator.clipboard.writeText([m.title, m.message].filter(Boolean).join("\n\n"));
@@ -103,10 +105,10 @@ export function MessageDetail({ m, app, topic, onClose }: { m: StoredMessage; ap
             </div>
           )}
 
-          {(m.click || actions.length > 0) && (
+          {(click || actions.length > 0) && (
             <div className="mt-6 flex flex-wrap gap-2">
-              {m.click && (
-                <Button variant="primary" size="sm" onClick={() => window.open(m.click, "_blank", "noopener,noreferrer")} title={m.click}>
+              {click && (
+                <Button variant="primary" size="sm" onClick={() => openSafe(click)} title={click}>
                   <ExternalLink className="size-3.5" />
                   Open link
                 </Button>
@@ -127,7 +129,7 @@ export function MessageDetail({ m, app, topic, onClose }: { m: StoredMessage; ap
             </div>
           )}
 
-          {m.click && <p className="mt-6 truncate text-[12px] text-ink-3">{m.click}</p>}
+          {click && <p className="mt-6 truncate text-[12px] text-ink-3">{click}</p>}
         </div>
       </div>
     </article>

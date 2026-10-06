@@ -7,7 +7,7 @@ import { allTopics, topicsKey } from "../lib/catalog";
 import { db } from "../lib/db";
 import { liveQuery } from "dexie";
 import { resolveScope, scopeKey } from "../lib/scope";
-import { useApps, useBackfill } from "../lib/sync";
+import { useAccess, useApps, useBackfill, useTopicMetaSync } from "../lib/sync";
 import { useUi } from "../store/ui";
 import { CommandPalette } from "./CommandPalette";
 import { Compose } from "./Compose";
@@ -17,7 +17,7 @@ import { SettingsPage } from "./SettingsPage";
 import { Sidebar } from "./Sidebar";
 import { StreamConnector, type StreamStatus } from "./StreamConnector";
 import { cx } from "./ui";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export function Shell() {
   const { apps: catalogApps, syncTopic, historyDays, isLoading, error, refetch } = useApps();
@@ -36,8 +36,21 @@ export function Shell() {
       return map;
     }, []) ?? {};
   const apps = catalogApps.map((a) => (a.icon ? a : { ...a, icon: a.topics.map((t) => msgIcons[t.topic]).find(Boolean) ?? "" }));
-  const backfill = useBackfill(apps, historyDays);
-  useQuery({ queryKey: ["token-extend"], queryFn: extendToken, refetchInterval: 60 * 60 * 1000, refetchOnWindowFocus: false, retry: false });
+  const qc = useQueryClient();
+  const access = useAccess(apps);
+  const backfill = useBackfill(access.readable, historyDays, access.ready, qc);
+  useTopicMetaSync(apps);
+  // Login tokens expire after 72 h of no use; keep extending even while the tab is hidden.
+  useQuery({
+    queryKey: ["token-extend"],
+    queryFn: extendToken,
+    refetchInterval: 60 * 60 * 1000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  const readableRef = useRef(access.readable);
+  readableRef.current = access.readable;
   const [status, setStatus] = useState<StreamStatus>("connecting");
   const [path] = useLocation();
   const search = useSearch();
@@ -55,13 +68,13 @@ export function Shell() {
       return counts;
     }, []) ?? {};
 
-  const streamKey = `${topicsKey(allTopics(apps).map((t) => t.topic))}|${syncTopic ?? ""}`;
+  const streamKey = `${topicsKey(allTopics(access.readable).map((t) => t.topic))}|${syncTopic ?? ""}`;
 
   return (
     <div className="flex h-full overflow-hidden">
       <GlobalKeys />
       <BadgeSync />
-      {!isLoading && <StreamConnector key={streamKey} apps={apps} syncTopic={syncTopic} onStatus={setStatus} />}
+      {!isLoading && access.ready && <StreamConnector key={streamKey} appsRef={readableRef} syncTopic={syncTopic} onStatus={setStatus} />}
 
       {/* Sidebar: static from md up, a drawer below. */}
       <div
@@ -74,14 +87,14 @@ export function Shell() {
           sidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full",
         )}
       >
-        <Sidebar apps={apps} unread={unread} scope={scope} status={status} loading={isLoading} />
+        <Sidebar apps={apps} denied={access.denied} unread={unread} scope={scope} status={status} loading={isLoading} />
       </aside>
 
       <main className="min-w-0 flex-1">
         {scope.kind === "settings" ? (
           <SettingsPage apps={apps} />
         ) : (
-          <Inbox key={scopeKey(scope)} scope={scope} apps={apps} syncing={isLoading || backfill.isFetching} error={(error ?? backfill.error) as Error | null} onRetry={() => void refetch()} />
+          <Inbox key={scopeKey(scope)} scope={scope} apps={apps} denied={access.denied} syncing={isLoading || backfill.isFetching} error={(error ?? backfill.error) as Error | null} onRetry={() => void refetch()} />
         )}
       </main>
 

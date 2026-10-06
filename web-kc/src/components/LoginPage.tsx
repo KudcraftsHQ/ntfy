@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { login } from "../lib/api";
+import { claimForUser } from "../lib/db";
 import { config } from "../lib/config";
 import { useSession } from "../lib/session";
 import { Button, Spinner } from "./ui";
@@ -9,7 +10,14 @@ export function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const signIn = useSession((s) => s.signIn);
-  const m = useMutation({ mutationFn: () => login(username.trim(), password), onSuccess: signIn });
+  const m = useMutation({
+    mutationFn: async () => {
+      const session = await login(username.trim(), password);
+      await claimForUser(session.username); // a different user never sees the previous one's cache
+      return session;
+    },
+    onSuccess: signIn,
+  });
   const host = config.base_url.replace(/^https?:\/\//, "");
 
   const submit = (e: FormEvent) => {

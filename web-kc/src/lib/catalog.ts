@@ -102,3 +102,7 @@ export function shouldAlert(mutes: MuteState, t: TopicView | undefined, priority
 
 /** Stable stream key: sorted topic list. Changing it remounts the stream component. */
 export const topicsKey = (topics: string[]) => [...topics].sort().join(",");
+
+/** Apps with unreadable topics removed (and apps left with none dropped): what the stream and backfill use. */
+export const readableApps = (apps: AppView[], denied: Set<string>): AppView[] =>
+  apps.map((a) => ({ ...a, topics: a.topics.filter((t) => !denied.has(t.topic)) })).filter((a) => a.topics.length > 0);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildApps, deriveAppId, isMuted, shortTopicName, shouldAlert, titleCase, topicsKey } from "./catalog";
+import { allTopics, buildApps, deriveAppId, readableApps, isMuted, shortTopicName, shouldAlert, titleCase, topicsKey } from "./catalog";
 import type { Catalog } from "./types";
 
 const BASE = "https://ntfy.example.com";
@@ -95,5 +95,14 @@ describe("mutes and alerts", () => {
     expect(shouldAlert(none, t, 1).notify).toBe(false);
     expect(shouldAlert(none, t, 2)).toEqual({ notify: true, sound: "silent" });
     expect(shouldAlert(none, t, 4)).toEqual({ notify: true, sound: "alert" });
+  });
+});
+
+describe("readableApps", () => {
+  it("drops unreadable topics so one 403 cannot take the whole stream down", () => {
+    const apps = buildApps(null, [{ base_url: BASE, topic: "typemap" }, { base_url: BASE, topic: "typemap-sales" }, { base_url: BASE, topic: "coolify" }], BASE);
+    const r = readableApps(apps, new Set(["typemap-sales", "coolify"]));
+    expect(allTopics(r).map((t) => t.topic)).toEqual(["typemap"]);
+    expect(r.map((a) => a.id)).toEqual(["typemap"]);
   });
 });

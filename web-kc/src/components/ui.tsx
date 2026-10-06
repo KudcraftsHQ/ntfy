@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { hueFor } from "../lib/format";
+import { safeHttpUrl } from "../lib/url";
 
 export const cx = clsx;
 
@@ -55,17 +56,18 @@ export function Kbd({ children }: { children: ReactNode }) {
 export function AppIcon({ name, icon, size = 32, className }: { name: string; icon?: string; size?: number; className?: string }) {
   const radius = size >= 28 ? "rounded-[9px]" : "rounded-md";
   const [failed, setFailed] = useState<string | null>(null);
-  if (icon && failed !== icon) {
+  const src = safeHttpUrl(icon);
+  if (src && failed !== src) {
     return (
       <img
-        src={icon}
+        src={src}
         alt=""
         width={size}
         height={size}
         loading="lazy"
         className={cx("shrink-0 object-cover bg-hover ring-1 ring-black/5 dark:ring-white/10", radius, className)}
         style={{ width: size, height: size }}
-        onError={() => setFailed(icon)}
+        onError={() => setFailed(src)}
       />
     );
   }

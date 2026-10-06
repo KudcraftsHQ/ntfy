@@ -2,6 +2,7 @@ import { File, Download } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { formatBytes } from "../lib/format";
+import { safeHttpUrl, safeUrl } from "../lib/url";
 import type { Attachment, NtfyMessage } from "../lib/types";
 
 const urlRe = /(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
@@ -30,7 +31,11 @@ export function MessageBody({ m }: { m: NtfyMessage }) {
   if (isMarkdown(m)) {
     return (
       <div className="md">
-        <Markdown remarkPlugins={[remarkGfm]} components={{ a: ({ node: _n, ...p }) => <a {...p} target="_blank" rel="noreferrer noopener" /> }}>
+        <Markdown
+          remarkPlugins={[remarkGfm]}
+          urlTransform={(url, key) => (key === "src" ? safeHttpUrl(url) : safeUrl(url)) ?? ""}
+          components={{ a: ({ node: _n, ...p }) => <a {...p} target="_blank" rel="noreferrer noopener" /> }}
+        >
           {m.message}
         </Markdown>
       </div>
@@ -46,17 +51,18 @@ export function MessageBody({ m }: { m: NtfyMessage }) {
 const isImage = (a: Attachment) => (a.type ? a.type.startsWith("image/") : /\.(png|jpe?g|gif|webp)$/i.test(a.name || a.url));
 
 export function AttachmentView({ a, compact }: { a: Attachment; compact?: boolean }) {
-  const expired = !!a.expires && a.expires * 1000 < Date.now();
+  const url = safeHttpUrl(a.url);
+  const expired = !url || (!!a.expires && a.expires * 1000 < Date.now());
   if (isImage(a) && !expired && !compact) {
     return (
-      <a href={a.url} target="_blank" rel="noreferrer noopener" className="block overflow-hidden rounded-xl border border-line bg-hover">
-        <img src={a.url} alt={a.name} loading="lazy" className="max-h-[420px] w-full object-contain" />
+      <a href={url ?? undefined} target="_blank" rel="noreferrer noopener" className="block overflow-hidden rounded-xl border border-line bg-hover">
+        <img src={url ?? undefined} alt={a.name} loading="lazy" className="max-h-[420px] w-full object-contain" />
       </a>
     );
   }
   return (
     <a
-      href={expired ? undefined : a.url}
+      href={expired ? undefined : (url ?? undefined)}
       target="_blank"
       rel="noreferrer noopener"
       onClick={(e) => e.stopPropagation()}
@@ -64,7 +70,7 @@ export function AttachmentView({ a, compact }: { a: Attachment; compact?: boolea
     >
       <File className="size-4 shrink-0 text-ink-3" />
       <span className="truncate font-medium text-ink">{a.name}</span>
-      <span className="shrink-0 text-ink-3">{expired ? "expired" : formatBytes(a.size)}</span>
+      <span className="shrink-0 text-ink-3">{!url ? "unavailable" : expired ? "expired" : formatBytes(a.size)}</span>
       {!expired && <Download className="size-3.5 shrink-0 text-ink-3" />}
     </a>
   );

@@ -6,6 +6,7 @@ import { clientsClaim } from "workbox-core";
 import { applyEvents, db } from "./lib/db";
 import { EVENT_MESSAGE, EVENT_MESSAGE_CLEAR, EVENT_MESSAGE_DELETE } from "./lib/stream";
 import { notificationTitle } from "./lib/notify-format";
+import { safeHttpUrl, safeUrl } from "./lib/url";
 import type { Action, NtfyMessage } from "./lib/types";
 
 declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<{ url: string; revision: string | null }> };
@@ -31,19 +32,26 @@ async function onPush(data: { event?: string; message?: NtfyMessage }) {
   const m = data.message;
   if (data.event === "message" && m) {
     if (m.event === EVENT_MESSAGE) {
-      // Show first: Safari revokes push subscriptions that do not show a notification promptly.
+      // Titles, icons and sound classes come from the catalog via IndexedDB (written by the app).
+      const meta = await db.topicMeta.get(m.topic).catch(() => undefined);
+      const quiet = (m.priority ?? 3) <= 2 || meta?.sound === "silent";
+      // Always show: Safari revokes push subscriptions that do not show a notification promptly.
       const opts: NotificationOptions & { image?: string; timestamp?: number; renotify?: boolean; actions?: { action: string; title: string }[] } = {
         body: (m.message ?? "").slice(0, 400),
-        icon: m.icon || ICON,
+        icon: safeHttpUrl(m.icon) || safeHttpUrl(meta?.icon) || ICON,
+        silent: quiet,
         badge: BADGE,
         tag: tagFor(m),
         renotify: true,
         timestamp: m.time * 1000,
         data: { message: m },
-        actions: (m.actions ?? []).filter((a) => a.action === "view" || a.action === "http").slice(0, 2).map((a) => ({ action: a.id || a.label, title: a.label })),
+        actions: (m.actions ?? [])
+          .filter((a) => (a.action === "view" && safeUrl(a.url)) || (a.action === "http" && safeHttpUrl(a.url)))
+          .slice(0, 2).map((a) => ({ action: a.id || a.label, title: a.label })),
       };
-      if (m.attachment?.type?.startsWith("image/")) opts.image = m.attachment.url;
-      await self.registration.showNotification(notificationTitle(m, m.topic), opts);
+      const image = safeHttpUrl(m.attachment?.url);
+      if (image && m.attachment?.type?.startsWith("image/")) opts.image = image;
+      await self.registration.showNotification(notificationTitle(m, meta?.title || m.topic), opts);
       await applyEvents([m]);
       await updateBadge();
       return;
@@ -85,10 +93,14 @@ async function onClick(e: NotificationEvent) {
   if (!m) return focusOrOpen("/");
   if (e.action) {
     const a: Action | undefined = (m.actions ?? []).find((x) => (x.id || x.label) === e.action);
-    if (a?.action === "view" && a.url) return self.clients.openWindow(a.url);
-    if (a?.action === "http" && a.url) {
+    if (a?.action === "view") {
+      const url = safeUrl(a.url);
+      return url ? self.clients.openWindow(url) : undefined;
+    }
+    const httpUrl = a?.action === "http" ? safeHttpUrl(a.url) : null;
+    if (a && httpUrl) {
       try {
-        const res = await fetch(a.url, { method: a.method ?? "POST", headers: a.headers ?? {}, body: a.body });
+        const res = await fetch(httpUrl, { method: a.method ?? "POST", headers: a.headers ?? {}, body: a.body });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
       } catch (err) {
         await self.registration.showNotification(`Action failed: ${a.label}`, { body: String(err), icon: ICON, badge: BADGE });
@@ -98,8 +110,9 @@ async function onClick(e: NotificationEvent) {
   }
   await db.messages.update(m.id, { read: 1 }).catch(() => undefined);
   await updateBadge();
-  if (m.click) return self.clients.openWindow(m.click);
-  return focusOrOpen(`/${m.topic}`);
+  const click = safeUrl(m.click);
+  if (click) return self.clients.openWindow(click);
+  return focusOrOpen(`/${encodeURIComponent(m.topic)}`);
 }
 
 self.addEventListener("install", () => void self.skipWaiting());

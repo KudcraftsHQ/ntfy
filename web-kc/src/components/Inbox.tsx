@@ -1,12 +1,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Bell, BellOff, CheckCheck, Filter, Inbox as InboxIcon, Menu, PenSquare, Search, X } from "lucide-react";
+import { Bell, BellOff, CheckCheck, Filter, Inbox as InboxIcon, Lock, Menu, PenSquare, Search, X } from "lucide-react";
+import { useLocation } from "wouter";
 import { Fragment, useDeferredValue, useRef, useState } from "react";
 import { useMountEffect } from "../hooks/useMountEffect";
-import { addAccountSubscription } from "../lib/api";
+import { addAccountSubscription, removeAccountSubscription } from "../lib/api";
 import { isMuted, topicLabel } from "../lib/catalog";
 import { db, markRead, markTopicsRead, markUnread } from "../lib/db";
 import { dayLabel } from "../lib/format";
+import { openSafe } from "../lib/url";
 import { reconcilePush, qk } from "../lib/sync";
 import type { Scope } from "../lib/scope";
 import { scopeTopics } from "../lib/scope";
@@ -29,7 +31,21 @@ const isTyping = (e: KeyboardEvent) => {
   return el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
 };
 
-export function Inbox({ scope, apps, syncing, error, onRetry }: { scope: Scope; apps: AppView[]; syncing: boolean; error: Error | null; onRetry: () => void }) {
+export function Inbox({
+  scope,
+  apps,
+  denied,
+  syncing,
+  error,
+  onRetry,
+}: {
+  scope: Scope;
+  apps: AppView[];
+  denied: Set<string>;
+  syncing: boolean;
+  error: Error | null;
+  onRetry: () => void;
+}) {
   const set = useUi((s) => s.set);
   const unreadOnly = useUi((s) => s.unreadOnly);
   const urgentOnly = useUi((s) => s.urgentOnly);
@@ -104,7 +120,7 @@ export function Inbox({ scope, apps, syncing, error, onRetry }: { scope: Scope; 
       else if (e.key === "/") {
         e.preventDefault();
         searchRef.current?.focus();
-      } else if (e.key === "o" && L.selected?.click) window.open(L.selected.click, "_blank", "noopener,noreferrer");
+      } else if (e.key === "o" && L.selected?.click) openSafe(L.selected.click);
       else if (e.key === "u" && L.selected) void (L.selected.read ? markUnread(L.selected.id) : markRead([L.selected.id]));
       else if (e.key === "R" && e.shiftKey) L.markAll();
       else if (e.key === "m") L.toggleScopeMute();
@@ -117,6 +133,8 @@ export function Inbox({ scope, apps, syncing, error, onRetry }: { scope: Scope; 
     scope.kind === "all" ? "All messages" : scope.kind === "app" ? scope.app.name : scope.kind === "topic" ? (topicLabel(scope.app, scope.topic) ?? scope.app.name) : scope.kind === "unknown" ? scope.topic : "";
   const headIcon = scope.kind === "app" || scope.kind === "topic" ? scope.app : null;
   const filtered = unreadOnly || urgentOnly || !!q;
+  const noAccess = scope.kind === "topic" && denied.has(scope.topic.topic);
+  const unsubTopic = scope.kind === "topic" && !scope.topic.managed ? scope.topic.topic : null;
 
   return (
     <div className="flex h-full min-h-0">
@@ -133,6 +151,7 @@ export function Inbox({ scope, apps, syncing, error, onRetry }: { scope: Scope; 
           </div>
           <div className="ml-auto flex items-center gap-0.5">
             {syncing && <Spinner className="mr-2 size-3.5 text-ink-3" />}
+            {unsubTopic && !noAccess && <UnsubscribeButton topic={unsubTopic} />}
             {muteTarget && (
               <IconButton label={muted ? "Unmute (M)" : "Mute (M)"} onClick={toggleScopeMute} active={muted}>
                 {muted ? <BellOff className="size-4" /> : <Bell className="size-4" />}
@@ -151,7 +170,7 @@ export function Inbox({ scope, apps, syncing, error, onRetry }: { scope: Scope; 
           </div>
         </header>
 
-        {scope.kind !== "unknown" && (
+        {scope.kind !== "unknown" && !noAccess && (
           <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2 md:px-5">
             <label className="relative flex h-8 min-w-0 flex-1 items-center">
               <Search className="pointer-events-none absolute left-2.5 size-3.5 text-ink-3" />
@@ -189,6 +208,18 @@ export function Inbox({ scope, apps, syncing, error, onRetry }: { scope: Scope; 
         <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-6 md:px-3">
           {scope.kind === "unknown" ? (
             <UnknownTopic topic={scope.topic} />
+          ) : noAccess && scope.kind === "topic" ? (
+            <Empty
+              icon={<Lock />}
+              title={`No access to ${scope.topic.topic}`}
+              body={
+                scope.topic.managed
+                  ? "Your account can no longer read this topic. Ask an admin to restore access."
+                  : "Your account can no longer read this topic, so it is left out of the live stream. Unsubscribe to remove it."
+              }
+            >
+              {unsubTopic && <UnsubscribeButton topic={unsubTopic} big />}
+            </Empty>
           ) : error && !rows?.length ? (
             <Empty icon={<InboxIcon />} title="Couldn't reach ntfy" body={error.message}>
               <Button onClick={onRetry}>Try again</Button>
@@ -309,5 +340,46 @@ function UnknownTopic({ topic }: { topic: string }) {
       </Button>
       {m.error && <p className="mt-3 text-[12.5px] text-urgent">{m.error.message}</p>}
     </Empty>
+  );
+}
+
+/** Removes an unmanaged (user-added) subscription. Catalog topics cannot be unsubscribed. Two clicks. */
+function UnsubscribeButton({ topic, big }: { topic: string; big?: boolean }) {
+  const qc = useQueryClient();
+  const [, navigate] = useLocation();
+  const [armed, setArmed] = useState(false);
+  const m = useMutation({
+    mutationFn: async () => {
+      await removeAccountSubscription(topic);
+      await db.messages.where("topic").equals(topic).delete();
+      await db.topics.delete(topic);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: qk.account });
+      navigate("/");
+    },
+  });
+  if (big) {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <Button onClick={() => m.mutate()} disabled={m.isPending} className="text-urgent">
+          {m.isPending ? <Spinner /> : "Unsubscribe"}
+        </Button>
+        {m.error && <p className="text-[12.5px] text-urgent">{m.error.message}</p>}
+      </div>
+    );
+  }
+  return (
+    <Button
+      size="sm"
+      variant={armed ? "danger" : "ghost"}
+      onClick={() => (armed ? m.mutate() : setArmed(true))}
+      onBlur={() => setArmed(false)}
+      disabled={m.isPending}
+      title={m.error ? m.error.message : "Remove this topic from your account"}
+      className="mr-1"
+    >
+      {m.isPending ? <Spinner className="size-3" /> : armed ? "Confirm unsubscribe" : "Unsubscribe"}
+    </Button>
   );
 }

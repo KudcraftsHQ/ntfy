@@ -8,14 +8,32 @@ export interface TopicState {
   backfilled: 0 | 1;
 }
 
+/** Display info the service worker needs (it cannot read the catalog or localStorage). */
+export interface TopicMeta {
+  topic: string;
+  title: string; // "FaceMap · Orders"
+  icon: string;
+  sound: string;
+}
+
+export interface MetaRow {
+  key: string;
+  value: string;
+}
+
 class KcDb extends Dexie {
   messages!: Table<StoredMessage, string>;
   topics!: Table<TopicState, string>;
+  topicMeta!: Table<TopicMeta, string>;
+  meta!: Table<MetaRow, string>;
   constructor() {
-    super("ntfy-kc");
+    // Not "ntfy-<x>": the stock web app names its databases ntfy-<username>.
+    super("kc-ntfy");
     this.version(1).stores({
       messages: "id, topic, time, read, [topic+time], sequence_id",
       topics: "topic",
+      topicMeta: "topic",
+      meta: "key",
     });
   }
 }
@@ -56,5 +74,20 @@ export const markUnread = (id: string) => db.messages.update(id, { read: 0 });
 export const markTopicsRead = (topics: string[]) => db.messages.where("topic").anyOf(topics).and((m) => m.read === 0).modify({ read: 1 });
 export const deleteMessage = (id: string) => db.messages.delete(id);
 
-/** Drops messages older than the server's retention window. */
-export const prune = (days: number) => db.messages.where("time").below(Date.now() / 1000 - days * 86400).delete();
+/** Drops messages older than the server's retention window. A missing or zero window never prunes everything. */
+export const retentionDays = (historyDays: number | null | undefined) => (historyDays && historyDays > 0 ? historyDays : 90);
+export const prune = (historyDays: number | null | undefined) =>
+  db.messages.where("time").below(Date.now() / 1000 - retentionDays(historyDays) * 86400).delete();
+
+/** The cache belongs to one user; a different sign-in starts from empty. */
+export async function claimForUser(username: string) {
+  const owner = await db.meta.get("owner");
+  if (owner && owner.value !== username) {
+    await db.transaction("rw", db.messages, db.topics, db.topicMeta, async () => {
+      await db.messages.clear();
+      await db.topics.clear();
+      await db.topicMeta.clear();
+    });
+  }
+  if (owner?.value !== username) await db.meta.put({ key: "owner", value: username });
+}

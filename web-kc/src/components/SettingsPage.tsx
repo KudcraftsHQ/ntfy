@@ -3,6 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Bell, BellOff, Menu, Monitor, Moon, Sun } from "lucide-react";
 import type { ReactNode } from "react";
 import { logout } from "../lib/api";
+import { clearLocalSession } from "../lib/auth";
 import { isMuted } from "../lib/catalog";
 import { config } from "../lib/config";
 import { db } from "../lib/db";
@@ -42,7 +43,6 @@ const pushCopy = { unsupported: "Not available in this browser", denied: "Blocke
 export function SettingsPage({ apps }: { apps: AppView[] }) {
   const ui = useUi();
   const session = useSession((s) => s.session);
-  const signOut = useSession((s) => s.signOut);
   const qc = useQueryClient();
   const push = useQuery({ queryKey: ["push-state"], queryFn: pushState });
   const unmutedTopics = () => allTopics(apps).filter((t) => !isMuted(useUi.getState().mutes, t)).map((t) => t.topic);
@@ -55,11 +55,9 @@ export function SettingsPage({ apps }: { apps: AppView[] }) {
     mutationFn: async () => {
       await disablePush().catch(() => undefined);
       await logout();
-      await db.delete();
     },
-    onSettled: () => {
-      signOut();
-      qc.clear();
+    onSettled: async () => {
+      await clearLocalSession();
       location.assign("/");
     },
   });

@@ -1,4 +1,4 @@
-import { BellOff, ChevronRight, Hash, Inbox, PenSquare, Search, Settings } from "lucide-react";
+import { BellOff, ChevronRight, Hash, Inbox, Lock, PenSquare, Search, Settings } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import { config } from "../lib/config";
@@ -27,7 +27,21 @@ function Count({ n, muted }: { n: number; muted?: boolean }) {
 
 const statusCopy: Record<StreamStatus, string> = { live: "Live", connecting: "Connecting", offline: "Reconnecting" };
 
-export function Sidebar({ apps, unread, scope, status, loading }: { apps: AppView[]; unread: Record<string, number>; scope: Scope; status: StreamStatus; loading: boolean }) {
+export function Sidebar({
+  apps,
+  denied,
+  unread,
+  scope,
+  status,
+  loading,
+}: {
+  apps: AppView[];
+  denied: Set<string>;
+  unread: Record<string, number>;
+  scope: Scope;
+  status: StreamStatus;
+  loading: boolean;
+}) {
   const mutes = useUi((s) => s.mutes);
   const set = useUi((s) => s.set);
   const username = useSession((s) => s.session?.username ?? "");
@@ -107,6 +121,7 @@ export function Sidebar({ apps, unread, scope, status, loading }: { apps: AppVie
                   <Link href={scopeHref({ app: app.id })} onClick={close} className={cx(rowBase, rowState(appActive), "pr-2")}>
                     <AppIcon name={app.name} icon={app.icon} size={20} />
                     <span className="truncate">{app.name}</span>
+                    {!nested && denied.has(app.topics[0]?.topic) && <Lock className="size-3 shrink-0 text-ink-3" aria-label="No access" />}
                     {appMuted && <BellOff className="size-3 shrink-0 text-ink-3" aria-label="Muted" />}
                     <Count n={appUnread} muted={appMuted} />
                     {nested && <span className="w-4 shrink-0" />}
@@ -126,11 +141,14 @@ export function Sidebar({ apps, unread, scope, status, loading }: { apps: AppVie
                     {app.topics.map((t) => {
                       const active = scope.kind === "topic" && scope.topic.topic === t.topic;
                       const muted = isMuted(mutes, t);
+                      const noAccess = denied.has(t.topic);
                       return (
                         <li key={t.topic}>
                           <Link href={scopeHref({ topic: t.topic })} onClick={close} className={cx(rowBase, "h-7 text-[13px]", rowState(active))}>
-                            <Hash className="size-3.5 shrink-0 text-ink-3" />
-                            <span className={cx("truncate", muted && "text-ink-3")}>{shortTopicName(t)}</span>
+                            {noAccess ? <Lock className="size-3.5 shrink-0 text-ink-3" aria-label="No access" /> : <Hash className="size-3.5 shrink-0 text-ink-3" />}
+                            <span className={cx("truncate", (muted || noAccess) && "text-ink-3")} title={noAccess ? "No access" : undefined}>
+                              {shortTopicName(t)}
+                            </span>
                             {muted && !appMuted && <BellOff className="size-3 shrink-0 text-ink-3" aria-label="Muted" />}
                             <Count n={unread[t.topic] ?? 0} muted={muted} />
                           </Link>

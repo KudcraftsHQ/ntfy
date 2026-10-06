@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import type { RefObject } from "react";
 import { useMountEffect } from "../hooks/useMountEffect";
 import { streamUrl } from "../lib/api";
 import { shouldAlert } from "../lib/catalog";
@@ -7,22 +8,29 @@ import { playSound, showNotification } from "../lib/notify";
 import { pushState } from "../lib/push";
 import { currentToken } from "../lib/session";
 import { isSyncEvent, parseLine, retryDelay } from "../lib/stream";
-import { refreshCatalog } from "../lib/sync";
+import { recheckAccess, refreshCatalog } from "../lib/sync";
 import { useUi } from "../store/ui";
 import type { AppView, TopicView } from "../lib/types";
 
 export type StreamStatus = "connecting" | "live" | "offline";
 
 /**
- * One WebSocket for every visible topic plus the account sync topic.
- * Mounted with key={topicsKey}, so a changed topic set tears it down and reconnects.
+ * One WebSocket for every readable topic plus the account sync topic.
+ * Mounted with key={topicsKey(readable)}, so a changed topic set tears it down and reconnects.
+ * Names, icons and sounds are read through `appsRef` at message time, so they never go stale.
  */
-export function StreamConnector({ apps, syncTopic, onStatus }: { apps: AppView[]; syncTopic: string | null; onStatus: (s: StreamStatus) => void }) {
+export function StreamConnector({ appsRef, syncTopic, onStatus }: { appsRef: RefObject<AppView[]>; syncTopic: string | null; onStatus: (s: StreamStatus) => void }) {
   const qc = useQueryClient();
   useMountEffect(() => {
-    const byTopic = new Map<string, { t: TopicView; app: AppView }>();
-    for (const app of apps) for (const t of app.topics) byTopic.set(t.topic, { t, app });
-    const topics = [...byTopic.keys()];
+    const lookup = (topic: string): { t: TopicView; app: AppView } | undefined => {
+      for (const app of appsRef.current ?? []) {
+        const t = app.topics.find((x) => x.topic === topic);
+        if (t) return { t, app };
+      }
+    };
+    const streamTopics = (appsRef.current ?? []).flatMap((a) => a.topics.map((t) => t.topic));
+    const byTopic = new Set(streamTopics);
+    const topics = [...streamTopics];
     if (syncTopic) topics.push(syncTopic);
     if (topics.length === 0) return;
 
@@ -34,7 +42,7 @@ export function StreamConnector({ apps, syncTopic, onStatus }: { apps: AppView[]
     void pushState().then((s) => (pushOn = s === "on"));
 
     const sinceTime = async () => {
-      const states = await db.topics.bulkGet([...byTopic.keys()]);
+      const states = await db.topics.bulkGet(streamTopics);
       const times = states.map((s) => s?.lastTime ?? 0).filter(Boolean);
       return times.length ? String(Math.min(...times)) : null;
     };
@@ -46,7 +54,8 @@ export function StreamConnector({ apps, syncTopic, onStatus }: { apps: AppView[]
         if (isSyncEvent(m)) refreshCatalog(qc);
         return;
       }
-      const entry = byTopic.get(m.topic);
+      if (!byTopic.has(m.topic)) return;
+      const entry = lookup(m.topic);
       const fresh = await applyEvents([m]);
       if (!fresh.length || !entry) return;
       const ui = useUi.getState();
@@ -62,7 +71,9 @@ export function StreamConnector({ apps, syncTopic, onStatus }: { apps: AppView[]
       if (closed) return;
       onStatus("connecting");
       ws = new WebSocket(streamUrl(topics, await sinceTime(), currentToken()));
+      let opened = false;
       ws.onopen = () => {
+        opened = true;
         attempt = 0;
         onStatus("live");
         refreshCatalog(qc); // contract §14.3: refetch on every (re)connect
@@ -71,6 +82,9 @@ export function StreamConnector({ apps, syncTopic, onStatus }: { apps: AppView[]
       ws.onclose = () => {
         if (closed) return;
         onStatus("offline");
+        // Refused before opening: likely 401 (token gone) or 403 (a topic became unreadable).
+        // Re-probe access and the account; a changed readable set remounts this component.
+        if (!opened && (attempt === 0 || attempt % 3 === 2)) recheckAccess(qc);
         timer = setTimeout(connect, retryDelay(attempt++) * 1000);
       };
     };

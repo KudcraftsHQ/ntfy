@@ -1,5 +1,6 @@
 import { config } from "./config";
-import { currentToken, useSession } from "./session";
+import { clearLocalSession } from "./auth";
+import { currentToken } from "./session";
 import { parseNdjson } from "./stream";
 import type { Account, Catalog, NtfyMessage } from "./types";
 
@@ -36,9 +37,10 @@ const errorFrom = async (res: Response) => {
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const res = await fetch(`${base()}${path}`, { ...init, headers: { ...authHeaders(), ...(init.headers as Record<string, string>) } });
+  if (res.status === 304) return res;
   if (res.status === 401 && currentToken()) {
-    // Token expired or revoked: drop the session so the login screen shows.
-    useSession.getState().signOut();
+    // Token expired or revoked: full local cleanup, then the login screen shows.
+    void clearLocalSession();
   }
   if (!res.ok) throw await errorFrom(res);
   return res;
@@ -71,14 +73,57 @@ export async function fetchAccount(): Promise<Account> {
   return (await request("/v1/account")).json();
 }
 
-/** GET /v1/catalog. Returns null when the server has the catalog disabled (404). */
+let catalogCache: { etag: string; body: Catalog; token: string | null } | null = null;
+
+/** Fills defaults the server omits (`topics` is omitempty) so the rest of the app can trust the shape. */
+export function normalizeCatalog(raw: Catalog): Catalog {
+  return {
+    ...raw,
+    history_days: typeof raw.history_days === "number" ? raw.history_days : 0,
+    sync_topic: raw.sync_topic || "",
+    apps: (raw.apps ?? []).map((a) => ({
+      ...a,
+      name: a.name || a.id,
+      icon: a.icon || "",
+      sound: a.sound || "default",
+      topics: (a.topics ?? []).map((t) => ({ ...t, name: t.name || "", sound: t.sound || a.sound || "default", permission: t.permission === "read-write" ? "read-write" : "read-only" })),
+    })),
+  };
+}
+
+/**
+ * GET /v1/catalog with If-None-Match (the server's ETag is a per-user view hash). Returns null when
+ * the server has the catalog disabled (404). A 304 returns the cached body.
+ */
 export async function fetchCatalog(): Promise<Catalog | null> {
+  const token = currentToken();
+  const cached = catalogCache?.token === token ? catalogCache : null;
   try {
-    return await (await request("/v1/catalog", { headers: { "Cache-Control": "no-cache" } })).json();
+    const res = await request("/v1/catalog", { headers: cached ? { "If-None-Match": cached.etag } : {} });
+    if (res.status === 304 && cached) return cached.body;
+    const body = normalizeCatalog(await res.json());
+    const etag = res.headers.get("ETag");
+    catalogCache = etag ? { etag, body, token } : null;
+    return body;
   } catch (e) {
-    if (e instanceof HttpError && e.status === 404) return null;
+    if (e instanceof HttpError && e.status === 404) {
+      catalogCache = null;
+      return null;
+    }
     throw e;
   }
+}
+
+/** GET /<topic>/auth: can this account read the topic? 401 (bad token) throws and signs out. */
+export async function canRead(topic: string): Promise<boolean> {
+  const res = await fetch(`${base()}/${topic}/auth`, { headers: authHeaders() });
+  if (res.status === 401 && currentToken()) {
+    void clearLocalSession();
+    throw new HttpError(401, "Signed out");
+  }
+  if (res.ok) return true;
+  if (res.status === 403 || res.status === 404) return false;
+  throw new HttpError(res.status, `HTTP ${res.status}`);
 }
 
 export async function addAccountSubscription(topic: string) {

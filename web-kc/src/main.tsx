@@ -5,6 +5,7 @@ import { registerSW } from "virtual:pwa-register";
 import { App } from "./App";
 import { applyTheme, useUi } from "./store/ui";
 import { HttpError } from "./lib/api";
+import { setOnCleared } from "./lib/auth";
 import "./index.css";
 
 applyTheme(useUi.getState().theme);
@@ -22,6 +23,8 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+setOnCleared(() => queryClient.clear());
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
