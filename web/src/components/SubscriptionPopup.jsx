@@ -245,12 +245,14 @@ export const SubscriptionPopup = (props) => {
             {t("action_bar_mute_notifications")}
           </MenuItem>
         )}
-        <MenuItem onClick={handleUnsubscribe}>
-          <ListItemIcon>
-            <RemoveCircle fontSize="small" />
-          </ListItemIcon>
-          {t("action_bar_unsubscribe")}
-        </MenuItem>
+        {!subscription.catalog && ( // kudcrafts: catalog -- it would reappear on the next sync
+          <MenuItem onClick={handleUnsubscribe}>
+            <ListItemIcon>
+              <RemoveCircle fontSize="small" />
+            </ListItemIcon>
+            {t("action_bar_unsubscribe")}
+          </MenuItem>
+        )}
       </PopupMenu>
       <Portal>
         <Snackbar
@@ -301,6 +303,11 @@ const DisplayNameDialog = (props) => {
     if (session.exists() && !subscription.internal) {
       try {
         console.log(`[SubscriptionSettingsDialog] Updating subscription display name to ${displayName}`);
+        if (subscription.catalog) {
+          // kudcrafts: catalog -- catalog subscriptions are virtual on the server; store a real one first
+          // so the rename persists (stored subscriptions win over catalog entries). 409 = already stored.
+          await accountApi.addSubscription(subscription.baseUrl, subscription.topic).catch(() => {});
+        }
         await accountApi.updateSubscription(subscription.baseUrl, subscription.topic, { display_name: displayName });
       } catch (e) {
         console.log(`[SubscriptionSettingsDialog] Error updating subscription`, e);

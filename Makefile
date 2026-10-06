@@ -243,7 +243,7 @@ cli-deps-static-sites:
 	touch server/docs/index.html server/site/app.html
 
 cli-deps-all:
-	go install github.com/goreleaser/goreleaser/v2@latest
+	go install github.com/goreleaser/goreleaser/v2@v2.18.0 # kudcrafts: @latest (v2.18.2) needs go 1.27.1, .go-version pins 1.27.0
 
 cli-deps-gcc-armv6-armv7:
 	which arm-linux-gnueabi-gcc || { echo "ERROR: ARMv6/ARMv7 cross compiler not installed. On Ubuntu, run: apt install gcc-arm-linux-gnueabi"; exit 1; }
@@ -259,7 +259,7 @@ cli-deps-update:
 	go mod tidy
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install golang.org/x/lint/golint@latest
-	go install github.com/goreleaser/goreleaser/v2@latest
+	go install github.com/goreleaser/goreleaser/v2@v2.18.0 # kudcrafts: @latest (v2.18.2) needs go 1.27.1, .go-version pins 1.27.0
 
 cli-build-results:
 	cat dist/config.yaml

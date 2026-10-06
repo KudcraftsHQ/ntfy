@@ -22,7 +22,6 @@ import {
 } from "@mui/material";
 import * as React from "react";
 import { useContext, useState } from "react";
-import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutlineOutlined";
 import Person from "@mui/icons-material/Person";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AddIcon from "@mui/icons-material/Add";
@@ -48,6 +47,7 @@ import AccountContext from "./AccountContext";
 import { PermissionDenyAll, PermissionRead, PermissionReadWrite, PermissionWrite } from "./ReserveIcons";
 import { SubscriptionPopup } from "./SubscriptionPopup";
 import { useNotificationPermissionListener, useVersionChangeListener } from "./hooks";
+import { AppGroupHeader, SubscriptionAppIcon, groupSubscriptionsByApp } from "./AppGroupHeader"; // kudcrafts: catalog
 
 const navWidth = 280;
 
@@ -278,14 +278,24 @@ const SubscriptionList = (props) => {
   const sortedSubscriptions = props.subscriptions
     .filter((s) => !s.internal)
     .sort((a, b) => (topicUrl(a.baseUrl, a.topic) < topicUrl(b.baseUrl, b.topic) ? -1 : 1));
+  const renderItem = (subscription) => (
+    <SubscriptionItem
+      key={subscription.id}
+      subscription={subscription}
+      selected={props.selectedSubscription && props.selectedSubscription.id === subscription.id}
+    />
+  );
+  if (!config.enable_catalog) {
+    return <>{sortedSubscriptions.map(renderItem)}</>;
+  }
+  // kudcrafts: catalog -- group by app
   return (
     <>
-      {sortedSubscriptions.map((subscription) => (
-        <SubscriptionItem
-          key={subscription.id}
-          subscription={subscription}
-          selected={props.selectedSubscription && props.selectedSubscription.id === subscription.id}
-        />
+      {groupSubscriptionsByApp(sortedSubscriptions).map((group) => (
+        <React.Fragment key={group.appId ?? "_other"}>
+          {group.appId && <AppGroupHeader name={group.name} icon={group.icon} />}
+          {group.subscriptions.map(renderItem)}
+        </React.Fragment>
       ))}
     </>
   );
@@ -305,7 +315,7 @@ const SubscriptionItem = (props) => {
       <CircularProgress size="24px" />
     ) : (
       <Badge badgeContent={iconBadge} invisible={subscription.new === 0} color="primary">
-        <ChatBubbleOutlineIcon />
+        <SubscriptionAppIcon subscription={subscription} />
       </Badge>
     );
 

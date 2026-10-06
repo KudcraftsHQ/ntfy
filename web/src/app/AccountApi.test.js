@@ -11,7 +11,7 @@ import accountApi from "./AccountApi";
 vi.mock("./Session", () => ({
   default: { token: vi.fn(() => "test-token"), setLastExtendedAtAsync: vi.fn(), resetAndRedirect: vi.fn() },
 }));
-vi.mock("./SubscriptionManager", () => ({ default: { syncFromRemote: vi.fn() } }));
+vi.mock("./SubscriptionManager", () => ({ default: { syncFromRemote: vi.fn(), syncFromCatalog: vi.fn() } }));
 vi.mock("./Prefs", () => ({
   default: { setSound: vi.fn(), setDeleteAfter: vi.fn(), setMinPriority: vi.fn(), setDateFormat: vi.fn(), setTimeFormat: vi.fn() },
   THEME: { DARK: "dark", LIGHT: "light", SYSTEM: "system" },
@@ -211,5 +211,38 @@ describe("AccountApi.sync", () => {
     expect(prefs.setDeleteAfter).toHaveBeenCalledWith(3600);
     expect(prefs.setMinPriority).toHaveBeenCalledWith(3);
     expect(subscriptionManager.syncFromRemote).toHaveBeenCalledWith([{ topic: "t" }], [{ topic: "t" }]);
+  });
+});
+
+// kudcrafts: catalog
+describe("AccountApi.sync catalog", () => {
+  afterEach(() => {
+    delete config.enable_catalog;
+  });
+
+  it("does not fetch the catalog when enable_catalog is off", async () => {
+    fetchMock.mockResolvedValue(ok({ subscriptions: [] }));
+    await accountApi.sync();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(subscriptionManager.syncFromCatalog).not.toHaveBeenCalled();
+  });
+
+  it("fetches the catalog with the bearer token and applies it when enable_catalog is on", async () => {
+    config.enable_catalog = true;
+    const catalog = { base_url: "https://ntfy.sh", apps: [] };
+    fetchMock.mockResolvedValueOnce(ok({ subscriptions: [] })).mockResolvedValueOnce(ok(catalog));
+    await accountApi.sync();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url, opts] = fetchMock.mock.calls[1];
+    expect(url).toBe("https://ntfy.sh/v1/catalog");
+    expect(opts.headers.Authorization).toBe("Bearer test-token");
+    expect(subscriptionManager.syncFromCatalog).toHaveBeenCalledWith(catalog);
+  });
+
+  it("treats a 404 as no catalog", async () => {
+    config.enable_catalog = true;
+    fetchMock.mockResolvedValueOnce(ok({ subscriptions: [] })).mockResolvedValueOnce({ status: 404, json: async () => ({}) });
+    await accountApi.sync();
+    expect(subscriptionManager.syncFromCatalog).toHaveBeenCalledWith(null);
   });
 });

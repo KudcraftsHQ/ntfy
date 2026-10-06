@@ -66,6 +66,8 @@ var flagsServe = append(
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "web-root", Aliases: []string{"web_root"}, EnvVars: []string{"NTFY_WEB_ROOT"}, Value: "/", Usage: "sets root of the web app (e.g. /, or /app), or disables it (disable)"}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{Name: "enable-signup", Aliases: []string{"enable_signup"}, EnvVars: []string{"NTFY_ENABLE_SIGNUP"}, Value: false, Usage: "allows users to sign up via the web app, or API"}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{Name: "enable-login", Aliases: []string{"enable_login"}, EnvVars: []string{"NTFY_ENABLE_LOGIN"}, Value: false, Usage: "allows users to log in via the web app, or API"}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{Name: "enable-catalog", Aliases: []string{"enable_catalog"}, EnvVars: []string{"NTFY_ENABLE_CATALOG"}, Value: false, Usage: "kudcrafts: enables the app/topic catalog (requires auth-file)"}),                 // kudcrafts: catalog
+	altsrc.NewBoolFlag(&cli.BoolFlag{Name: "catalog-inject-icon", Aliases: []string{"catalog_inject_icon"}, EnvVars: []string{"NTFY_CATALOG_INJECT_ICON"}, Value: true, Usage: "kudcrafts: add the catalog app icon to messages without an icon"}), // kudcrafts: catalog
 	altsrc.NewBoolFlag(&cli.BoolFlag{Name: "enable-reservations", Aliases: []string{"enable_reservations"}, EnvVars: []string{"NTFY_ENABLE_RESERVATIONS"}, Value: false, Usage: "allows users to reserve topics (if their tier allows it)"}),
 	altsrc.NewBoolFlag(&cli.BoolFlag{Name: "require-login", Aliases: []string{"require_login"}, EnvVars: []string{"NTFY_REQUIRE_LOGIN"}, Value: false, Usage: "all actions via the web app requires a login"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "upstream-base-url", Aliases: []string{"upstream_base_url"}, EnvVars: []string{"NTFY_UPSTREAM_BASE_URL"}, Value: "", Usage: "forward poll request to an upstream server, this is needed for iOS push notifications for self-hosted servers"}),
@@ -189,6 +191,8 @@ func execServe(c *cli.Context) error {
 	enableLogin := c.Bool("enable-login")
 	requireLogin := c.Bool("require-login")
 	enableReservations := c.Bool("enable-reservations")
+	enableCatalog := c.Bool("enable-catalog")          // kudcrafts: catalog
+	catalogInjectIcon := c.Bool("catalog-inject-icon") // kudcrafts: catalog
 	upstreamBaseURL := c.String("upstream-base-url")
 	upstreamAccessToken := c.String("upstream-access-token")
 	smtpSenderAddr := c.String("smtp-sender-addr")
@@ -313,6 +317,13 @@ func execServe(c *cli.Context) error {
 		return fmt.Errorf("invalid visitor attachment daily bandwidth limit: %s", visitorAttachmentDailyBandwidthLimitStr)
 	} else if visitorAttachmentDailyBandwidthLimit > math.MaxInt {
 		return fmt.Errorf("config option visitor-attachment-daily-bandwidth-limit must be lower than %d", math.MaxInt)
+	}
+
+	// kudcrafts: catalog
+	if enableCatalog && (databaseURL != "" || authFile == "") {
+		return errors.New("enable-catalog requires auth-file (SQLite) and is not supported with database-url")
+	} else if enableCatalog && baseURL == "" {
+		return errors.New("enable-catalog requires base-url to be set")
 	}
 
 	// Check values
@@ -554,6 +565,8 @@ func execServe(c *cli.Context) error {
 	conf.EnableLogin = enableLogin
 	conf.RequireLogin = requireLogin
 	conf.EnableReservations = enableReservations
+	conf.EnableCatalog = enableCatalog         // kudcrafts: catalog
+	conf.CatalogInjectIcon = catalogInjectIcon // kudcrafts: catalog
 	conf.EnableMetrics = enableMetrics
 	conf.MetricsListenHTTP = metricsListenHTTP
 	conf.ProfileListenHTTP = profileListenHTTP

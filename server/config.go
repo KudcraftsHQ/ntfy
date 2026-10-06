@@ -217,6 +217,8 @@ type Config struct {
 	EnableLogin                          bool
 	RequireLogin                         bool
 	EnableReservations                   bool // Allow users with role "user" to own/reserve topics
+	EnableCatalog                        bool // kudcrafts: catalog
+	CatalogInjectIcon                    bool // kudcrafts: catalog
 	EnableMetrics                        bool
 	AccessControlAllowOrigin             string // CORS header field to restrict access from web clients
 	WebPushPrivateKey                    string `hash:"-"`
@@ -326,6 +328,8 @@ func NewConfig() *Config {
 		EnableSignup:                         false,
 		EnableLogin:                          false,
 		EnableReservations:                   false,
+		EnableCatalog:                        false, // kudcrafts: catalog
+		CatalogInjectIcon:                    true,  // kudcrafts: catalog
 		RequireLogin:                         false,
 		AccessControlAllowOrigin:             "*",
 		WebPushPrivateKey:                    "",

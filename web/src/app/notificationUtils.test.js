@@ -134,3 +134,19 @@ describe("messageWithSequenceId", () => {
     expect(messageWithSequenceId(m)).toBe(m);
   });
 });
+
+// kudcrafts: catalog
+describe("toNotificationParams icon and sound class", () => {
+  const base = { defaultTitle: "t", topicRoute: "https://ntfy.sh/t", baseUrl: "https://ntfy.sh", topic: "t" };
+  it("prefers message.icon, then the app icon, then the ntfy icon", () => {
+    expect(toNotificationParams({ ...base, message: { id: "1", icon: "https://a/m.png" }, appIcon: "https://a/app.png" })[1].icon).toBe(
+      "https://a/m.png",
+    );
+    expect(toNotificationParams({ ...base, message: { id: "1" }, appIcon: "https://a/app.png" })[1].icon).toBe("https://a/app.png");
+    expect(toNotificationParams({ ...base, message: { id: "1" } })[1].icon).toBe("/static/images/ntfy.png");
+  });
+  it("is silent only for the silent sound class", () => {
+    expect(toNotificationParams({ ...base, message: { id: "1" }, sound: "silent" })[1].silent).toBe(true);
+    expect(toNotificationParams({ ...base, message: { id: "1" }, sound: "alert" })[1].silent).toBe(false);
+  });
+});

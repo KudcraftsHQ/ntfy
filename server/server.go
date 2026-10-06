@@ -73,6 +73,7 @@ type Server struct {
 	priceCache        *util.LookupCache[map[string]int64] // Stripe price ID -> price as cents (USD implied!)
 	metricsHandler    http.Handler                        // Handles /metrics if enable-metrics set, and listen-metrics-http not set
 	closeChan         chan bool
+	catalog           *catalog // kudcrafts: catalog; nil unless enable-catalog is set
 	mu                sync.RWMutex
 }
 
@@ -321,6 +322,11 @@ func New(conf *Config) (*Server, error) {
 		stripe:          stripe,
 	}
 	s.priceCache = util.NewLookupCache(s.fetchStripePrices, conf.StripePriceCacheDuration)
+	if conf.EnableCatalog && userManager != nil { // kudcrafts: catalog
+		if s.catalog, err = newCatalogFromManager(s, userManager); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -442,6 +448,9 @@ func (s *Server) Run() error {
 	go s.runStatsResetter()
 	go s.runDelayedSender()
 	go s.runFirebaseKeepaliver()
+	if s.catalog != nil { // kudcrafts: catalog
+		go s.catalog.loop(s.closeChan)
+	}
 
 	return <-errChan
 }
@@ -589,6 +598,8 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request, v *visit
 		return s.ensureAdmin(s.handleAccessReset)(w, r, v)
 	} else if r.Method == http.MethodPost && r.URL.Path == apiAccountPath {
 		return s.ensureUserManager(s.handleAccountCreate)(w, r, v)
+	} else if handled, err := s.handleCatalogRoute(w, r, v); handled { // kudcrafts: catalog
+		return err
 	} else if r.Method == http.MethodGet && r.URL.Path == apiAccountPath {
 		return s.handleAccountGet(w, r, v) // Allowed by anonymous
 	} else if r.Method == http.MethodDelete && r.URL.Path == apiAccountPath {
@@ -911,6 +922,9 @@ func (s *Server) handlePublishInternal(r *http.Request, v *visitor) (*model.Mess
 	}
 	if err := s.handlePublishBody(r, v, m, body, template, unifiedpush, priorityStr); err != nil {
 		return nil, err
+	}
+	if s.catalog != nil { // kudcrafts: catalog
+		s.catalog.onPublish(r, v, t.ID, m)
 	}
 	if m.Message == "" {
 		m.Message = emptyMessageBody

@@ -23,6 +23,7 @@ export const topicUrlAuth = (baseUrl, topic) => `${topicUrl(baseUrl, topic)}/aut
 export const topicShortUrl = (baseUrl, topic) => shortUrl(topicUrl(baseUrl, topic));
 export const webPushUrl = (baseUrl) => `${baseUrl}/v1/webpush`;
 export const accountUrl = (baseUrl) => `${baseUrl}/v1/account`;
+export const catalogUrl = (baseUrl) => `${baseUrl}/v1/catalog`; // kudcrafts: catalog
 export const accountLoginUrl = (baseUrl) => `${baseUrl}/v1/account/login`;
 export const accountPasswordUrl = (baseUrl) => `${baseUrl}/v1/account/password`;
 export const accountTokenUrl = (baseUrl) => `${baseUrl}/v1/account/token`;
@@ -55,6 +56,9 @@ export const validTopic = (topic) => {
 export const topicDisplayName = (subscription) => {
   if (subscription.displayName) {
     return subscription.displayName;
+  }
+  if (subscription.catalogName) {
+    return subscription.catalogName; // kudcrafts: catalog
   }
   if (subscription.baseUrl === config.base_url) {
     return subscription.topic;

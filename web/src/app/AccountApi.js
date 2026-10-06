@@ -18,6 +18,7 @@ import {
   accountSubscriptionUrl,
   accountTokenUrl,
   accountUrl,
+  catalogUrl,
   maybeWithBearerAuth,
   tiersUrl,
   withBasicAuth,
@@ -442,6 +443,20 @@ class AccountApi {
     });
   }
 
+  // kudcrafts: catalog
+  async catalog() {
+    const url = catalogUrl(config.base_url);
+    console.log(`[AccountApi] Fetching catalog ${url}`);
+    const response = await fetch(url, { headers: withBearerAuth({}, session.token()) });
+    if (response.status === 404) {
+      return null; // Catalog disabled on this server
+    }
+    if (response.status !== 200) {
+      throw new Error(`Unexpected catalog response ${response.status}`);
+    }
+    return response.json();
+  }
+
   async sync() {
     try {
       if (!session.token()) {
@@ -462,7 +477,8 @@ class AccountApi {
         if (account.notification.sound) {
           await prefs.setSound(account.notification.sound);
         }
-        if (account.notification.delete_after) {
+        if (account.notification.delete_after !== undefined && account.notification.delete_after !== null) {
+          // kudcrafts: 0 = "never" must sync too (spec 19.2)
           await prefs.setDeleteAfter(account.notification.delete_after);
         }
         if (account.notification.min_priority) {
@@ -471,6 +487,14 @@ class AccountApi {
       }
       if (account.subscriptions) {
         await subscriptionManager.syncFromRemote(account.subscriptions, account.reservations);
+      }
+      if (config.enable_catalog) {
+        // kudcrafts: catalog
+        try {
+          await subscriptionManager.syncFromCatalog(await this.catalog());
+        } catch (e) {
+          console.log(`[AccountApi] Error syncing catalog`, e);
+        }
       }
       return account;
     } catch (e) {

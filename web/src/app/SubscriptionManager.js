@@ -138,6 +138,44 @@ export class SubscriptionManager {
     );
   }
 
+  // kudcrafts: catalog
+  /**
+   * Decorate subscriptions with catalog metadata (app, icon, sound, catalog name), from GET /v1/catalog.
+   * The subscriptions themselves are created by syncFromRemote(), because the server merges the user's
+   * readable catalog topics into the account's subscriptions. Subscriptions that are no longer in the
+   * catalog lose their catalog fields. A null catalog (404, catalog disabled) changes nothing.
+   */
+  async syncFromCatalog(catalog) {
+    if (!catalog || !Array.isArray(catalog.apps)) {
+      return;
+    }
+    console.log(`[SubscriptionManager] Syncing catalog`, catalog);
+    const catalogIds = [];
+    await Promise.all(
+      catalog.apps.flatMap((app) =>
+        (app.topics || []).map(async (t) => {
+          const local = await this.upsert(catalog.base_url, t.topic, {
+            catalog: true,
+            appId: app.id,
+            appName: app.name,
+            appIcon: app.icon || null,
+            sound: t.sound,
+            catalogName: t.name || null,
+          });
+          catalogIds.push(local.id);
+        }),
+      ),
+    );
+    const localSubscriptions = await this.db.subscriptions.toArray();
+    await Promise.all(
+      localSubscriptions
+        .filter((local) => local.catalog && !catalogIds.includes(local.id))
+        .map((local) =>
+          this.update(local.id, { catalog: false, appId: null, appName: null, appIcon: null, sound: null, catalogName: null }),
+        ),
+    );
+  }
+
   async updateWebPushSubscriptions(topics) {
     const hasWebPushTopics = topics.length > 0;
     const browserSubscription = await notifier.webPushSubscription(hasWebPushTopics);

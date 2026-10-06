@@ -121,6 +121,9 @@ func (s *Server) handleAccountGet(w http.ResponseWriter, r *http.Request, v *vis
 				response.Subscriptions = u.Prefs.Subscriptions
 			}
 		}
+		if s.catalog != nil { // kudcrafts: catalog
+			response.Subscriptions = s.catalog.mergeSubscriptions(u, response.Subscriptions)
+		}
 		if u.Tier != nil {
 			response.Tier = &apiAccountTier{
 				Code: u.Tier.Code,
