@@ -1,0 +1,113 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  /* Semantic surfaces, swapped wholesale in dark mode below. */
+  --color-canvas: #ffffff;
+  --color-sidebar: #f7f7f8;
+  --color-panel: #ffffff;
+  --color-raised: #ffffff;
+  --color-hover: #f1f1f3;
+  --color-active: #e9e9ec;
+  --color-line: #e7e7ea;
+  --color-line-strong: #d6d6db;
+  --color-ink: #17171a;
+  --color-ink-2: #4a4a52;
+  --color-ink-3: #85858e;
+  --color-accent: #1f8a74;
+  --color-accent-soft: #e3f3ef;
+  --color-accent-ink: #146a59;
+  --color-urgent: #e5484d;
+  --color-urgent-soft: #fdecec;
+  --color-high: #f08c00;
+  --color-high-soft: #fff3e0;
+  --color-unread: #1f8a74;
+}
+
+.dark {
+  --color-canvas: #0e0e11;
+  --color-sidebar: #0a0a0c;
+  --color-panel: #121216;
+  --color-raised: #18181d;
+  --color-hover: #1a1a1f;
+  --color-active: #222228;
+  --color-line: #222228;
+  --color-line-strong: #2e2e36;
+  --color-ink: #ececf0;
+  --color-ink-2: #a8a8b3;
+  --color-ink-3: #6c6c78;
+  --color-accent: #3cc3a5;
+  --color-accent-soft: #11302a;
+  --color-accent-ink: #5fd9bd;
+  --color-urgent: #ff6369;
+  --color-urgent-soft: #3a1618;
+  --color-high: #ffa94d;
+  --color-high-soft: #35240f;
+  --color-unread: #3cc3a5;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  @apply bg-canvas text-ink font-sans antialiased;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-tap-highlight-color: transparent;
+}
+::selection {
+  background: color-mix(in oklab, var(--color-accent) 30%, transparent);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Markdown bodies. Kept small and deliberate rather than pulling in a prose plugin. */
+.md {
+  @apply text-[14px] leading-relaxed text-ink-2 break-words;
+}
+.md > * + * {
+  @apply mt-2.5;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  @apply font-semibold text-ink mt-4 first:mt-0;
+}
+.md h1 { @apply text-lg; }
+.md h2 { @apply text-base; }
+.md h3, .md h4 { @apply text-[14px]; }
+.md strong { @apply font-semibold text-ink; }
+.md a { @apply text-accent-ink underline decoration-accent/40 underline-offset-2 hover:decoration-accent; }
+.md ul { @apply list-disc pl-5 space-y-1; }
+.md ol { @apply list-decimal pl-5 space-y-1; }
+.md code { @apply font-mono text-[12.5px] rounded bg-hover px-1 py-0.5 text-ink; }
+.md pre { @apply rounded-lg bg-hover p-3 overflow-x-auto; }
+.md pre code { @apply bg-transparent p-0; }
+.md blockquote { @apply border-l-2 border-line-strong pl-3 text-ink-3; }
+.md hr { @apply border-line; }
+.md table { @apply w-full text-[13px] border-collapse block overflow-x-auto; }
+.md th { @apply text-left font-medium text-ink-3 border-b border-line py-1.5 pr-4; }
+.md td { @apply border-b border-line py-1.5 pr-4 align-top; }
+.md img { @apply max-w-full rounded-lg; }
+
+@keyframes kc-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-in { animation: kc-in 160ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-in { animation: none; }
+}
