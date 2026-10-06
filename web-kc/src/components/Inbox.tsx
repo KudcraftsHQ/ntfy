@@ -139,41 +139,13 @@ export function Inbox({
   return (
     <div className="flex h-full min-h-0">
       <section className={cx("flex min-w-0 flex-1 flex-col", selected && "hidden lg:flex lg:w-[380px] lg:flex-none xl:w-[440px]")} aria-label="Messages">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-3 md:px-5">
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b border-line px-3 md:px-6">
           <IconButton label="Menu" className="-ml-1 md:hidden" onClick={() => set({ sidebarOpen: true })}>
-            <Menu className="size-4.5" />
+            <Menu className="size-[18px]" />
           </IconButton>
-          {headIcon ? <AppIcon name={headIcon.name} icon={headIcon.icon} size={22} /> : <InboxIcon className="size-[18px] text-ink-3" />}
-          <div className="flex min-w-0 items-baseline gap-2">
-            {scope.kind === "topic" && topicLabel(scope.app, scope.topic) && <span className="hidden truncate text-[14px] text-ink-3 sm:inline">{scope.app.name} /</span>}
-            <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{title}</h1>
-            {!!unreadCount && <span className="shrink-0 text-[12.5px] text-ink-3 tabular-nums">{unreadCount} unread</span>}
-          </div>
-          <div className="ml-auto flex items-center gap-0.5">
-            {syncing && <Spinner className="mr-2 size-3.5 text-ink-3" />}
-            {unsubTopic && !noAccess && <UnsubscribeButton topic={unsubTopic} />}
-            {muteTarget && (
-              <IconButton label={muted ? "Unmute (M)" : "Mute (M)"} onClick={toggleScopeMute} active={muted}>
-                {muted ? <BellOff className="size-4" /> : <Bell className="size-4" />}
-              </IconButton>
-            )}
-            <IconButton label="Mark all read (Shift+R)" onClick={markAll} disabled={!unreadCount} className="disabled:opacity-40">
-              <CheckCheck className="size-4" />
-            </IconButton>
-            <IconButton
-              label="New message (C)"
-              onClick={() => set({ composeOpen: true })}
-              className="md:hidden"
-            >
-              <PenSquare className="size-4" />
-            </IconButton>
-          </div>
-        </header>
-
-        {scope.kind !== "unknown" && !noAccess && (
-          <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2 md:px-5">
-            <label className="relative flex h-8 min-w-0 flex-1 items-center">
-              <Search className="pointer-events-none absolute left-2.5 size-3.5 text-ink-3" />
+          {scope.kind !== "unknown" && !noAccess ? (
+            <label className="relative flex h-9 min-w-0 flex-1 items-center">
+              <Search className="pointer-events-none absolute left-1 size-4 stroke-[1.6] text-ink-3" />
               <input
                 ref={searchRef}
                 value={search}
@@ -181,31 +153,61 @@ export function Inbox({
                   setSearch(e.target.value);
                   setLimit(PAGE);
                 }}
-                placeholder="Search"
+                placeholder={scope.kind === "all" ? "Search all messages" : `Search ${title}`}
                 aria-label="Search messages"
-                className="h-8 w-full rounded-lg border border-line bg-panel pr-8 pl-8 text-[13px] outline-none transition placeholder:text-ink-3 focus:border-accent focus:ring-3 focus:ring-accent/15"
+                className="h-9 w-full bg-transparent pr-8 pl-8 text-[14.5px] outline-none placeholder:text-ink-3"
               />
               {search ? (
-                <button aria-label="Clear search" onClick={() => setSearch("")} className="absolute right-2 text-ink-3 hover:text-ink">
+                <button aria-label="Clear search" onClick={() => setSearch("")} className="absolute right-1 rounded-full p-1 text-ink-3 hover:bg-hover hover:text-ink">
                   <X className="size-3.5" />
                 </button>
               ) : (
-                <span className={cx("pointer-events-none absolute right-2 hidden", selected ? "xl:block" : "sm:block")}>
+                <span className={cx("pointer-events-none absolute right-1 hidden", selected ? "xl:block" : "sm:block")}>
                   <Kbd>/</Kbd>
                 </span>
               )}
             </label>
-            <Chip on={unreadOnly} onClick={() => set({ unreadOnly: !unreadOnly })}>
-              Unread
-            </Chip>
-            <Chip on={urgentOnly} onClick={() => set({ urgentOnly: !urgentOnly })}>
-              <span className="hidden sm:inline">High priority</span>
-              <span className="sm:hidden">High</span>
-            </Chip>
+          ) : (
+            <div className="flex-1" />
+          )}
+          <div className="ml-auto flex items-center gap-0.5">
+            {syncing && <Spinner className="mr-2 size-3.5 text-ink-3" />}
+            {unsubTopic && !noAccess && <UnsubscribeButton topic={unsubTopic} />}
+            {muteTarget && (
+              <IconButton label={muted ? "Unmute (M)" : "Mute (M)"} onClick={toggleScopeMute} active={muted}>
+                {muted ? <BellOff className="size-[17px]" /> : <Bell className="size-[17px]" />}
+              </IconButton>
+            )}
+            <IconButton label="Mark all read (Shift+R)" onClick={markAll} disabled={!unreadCount} className="disabled:opacity-40">
+              <CheckCheck className="size-[17px]" />
+            </IconButton>
+            <IconButton label="New message (C)" onClick={() => set({ composeOpen: true })} className="md:hidden">
+              <PenSquare className="size-[17px]" />
+            </IconButton>
           </div>
-        )}
+        </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-6 md:px-3">
+        <div className={cx("shrink-0 px-5 md:px-7", selected ? "pt-5 pb-3" : "pt-7 pb-4")}>
+          <div className="flex min-w-0 items-center gap-3">
+            {headIcon && <AppIcon name={headIcon.name} icon={headIcon.icon} size={selected ? 26 : 32} />}
+            <h1 className={cx("min-w-0 truncate font-normal tracking-[-0.02em] text-ink", selected ? "text-[24px]" : "text-[30px]")}>
+              {scope.kind === "topic" && topicLabel(scope.app, scope.topic) && <span className="text-ink-3">{scope.app.name} / </span>}
+              {title}
+            </h1>
+          </div>
+          {scope.kind !== "unknown" && !noAccess && (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Chip on={unreadOnly} onClick={() => set({ unreadOnly: !unreadOnly })}>
+                Unread{unreadCount ? <span className="tabular-nums text-ink-3">{unreadCount}</span> : null}
+              </Chip>
+              <Chip on={urgentOnly} onClick={() => set({ urgentOnly: !urgentOnly })}>
+                High priority
+              </Chip>
+            </div>
+          )}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto border-t border-line pb-6">
           {scope.kind === "unknown" ? (
             <UnknownTopic topic={scope.topic} />
           ) : noAccess && scope.kind === "topic" ? (
@@ -256,7 +258,7 @@ export function Inbox({
                 return (
                   <Fragment key={m.id}>
                     {showDay && (
-                      <li className="sticky top-0 z-10 bg-canvas px-3 pt-3 pb-1.5 text-[11.5px] font-semibold text-ink-3" role="presentation">
+                      <li className="sticky top-0 z-10 border-b border-line bg-canvas/95 px-5 py-2 text-[12.5px] font-medium text-ink-3 backdrop-blur-sm md:px-7" role="presentation">
                         {day}
                       </li>
                     )}
@@ -293,8 +295,8 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
       onClick={onClick}
       aria-pressed={on}
       className={cx(
-        "h-8 shrink-0 rounded-lg border px-2.5 text-[12.5px] font-medium transition-colors",
-        on ? "border-accent/40 bg-accent-soft text-accent-ink" : "border-line bg-panel text-ink-2 hover:border-line-strong hover:text-ink",
+        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border px-3 text-[13.5px] transition-colors duration-150",
+        on ? "border-accent/35 bg-accent-soft text-accent-ink" : "border-line-strong bg-canvas text-ink-2 hover:bg-hover hover:text-ink",
       )}
     >
       {children}
@@ -305,9 +307,9 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 export function Empty({ icon, title, body, children }: { icon: React.ReactNode; title: string; body?: string; children?: React.ReactNode }) {
   return (
     <div className="animate-in flex flex-col items-center px-6 py-20 text-center">
-      <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-line bg-panel text-ink-3 shadow-sm [&>svg]:size-5">{icon}</div>
-      <h2 className="text-[15px] font-semibold">{title}</h2>
-      {body && <p className="mt-1.5 max-w-[340px] text-[13px] leading-relaxed text-ink-3">{body}</p>}
+      <div className="mb-5 flex size-12 items-center justify-center rounded-full border border-line bg-panel text-ink-3 shadow-soft [&>svg]:size-5 [&>svg]:stroke-[1.5]">{icon}</div>
+      <h2 className="font-display text-[26px] leading-tight text-ink">{title}</h2>
+      {body && <p className="mt-2 max-w-[360px] text-[14px] leading-relaxed text-ink-3">{body}</p>}
       {children && <div className="mt-5">{children}</div>}
     </div>
   );
@@ -315,10 +317,10 @@ export function Empty({ icon, title, body, children }: { icon: React.ReactNode; 
 
 function Skeleton() {
   return (
-    <ul className="space-y-1 px-3 pt-3" aria-busy aria-label="Loading messages">
+    <ul aria-busy aria-label="Loading messages">
       {[0, 1, 2, 3, 4, 5].map((i) => (
-        <li key={i} className="flex gap-3 py-3" style={{ opacity: 1 - i * 0.14 }}>
-          <div className="size-9 animate-pulse rounded-[9px] bg-active" />
+        <li key={i} className="flex gap-3.5 border-b border-line px-5 py-4 md:px-7" style={{ opacity: 1 - i * 0.14 }}>
+          <div className="size-[34px] animate-pulse rounded-full bg-active" />
           <div className="flex-1 space-y-2 pt-0.5">
             <div className="h-2.5 w-24 animate-pulse rounded bg-active" />
             <div className="h-3 w-3/5 animate-pulse rounded bg-active" />

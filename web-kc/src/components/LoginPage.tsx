@@ -27,14 +27,14 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-full flex-col items-center justify-center bg-sidebar px-5 py-12">
-      <div className="w-full max-w-[360px]">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <img src="/static/images/pwa-192x192.png" alt="" className="mb-5 size-12 rounded-[14px] shadow-sm ring-1 ring-black/5" />
-          <h1 className="text-[22px] font-semibold tracking-[-0.01em]">Sign in to ntfy</h1>
-          <p className="mt-1.5 text-[13.5px] text-ink-3">Every app's alerts, in one inbox.</p>
+      <div className="w-full max-w-[380px]">
+        <div className="mb-9 flex flex-col items-center text-center">
+          <img src="/static/images/pwa-192x192.png" alt="" className="mb-6 size-11 rounded-xl" />
+          <h1 className="font-display text-[40px] leading-none tracking-[-0.01em] text-ink">Welcome back</h1>
+          <p className="mt-3 text-[14.5px] text-ink-3">Sign in to every app's alerts, in one inbox.</p>
         </div>
-        <form onSubmit={submit} className="rounded-2xl border border-line bg-panel p-6 shadow-sm">
-          <label className="block text-[12.5px] font-medium text-ink-2" htmlFor="u">
+        <form onSubmit={submit} className="rounded-2xl border border-line bg-panel p-7 shadow-soft">
+          <label className="block text-[13.5px] text-ink-2" htmlFor="u">
             Username
           </label>
           <input
@@ -43,9 +43,9 @@ export function LoginPage() {
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="mt-1.5 h-10 w-full rounded-lg border border-line bg-canvas px-3 text-[14px] outline-none transition focus:border-accent focus:ring-3 focus:ring-accent/15"
+            className="mt-2 h-11 w-full rounded-[10px] border border-line-strong bg-canvas px-3.5 text-[15px] outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/12"
           />
-          <label className="mt-4 block text-[12.5px] font-medium text-ink-2" htmlFor="p">
+          <label className="mt-5 block text-[13.5px] text-ink-2" htmlFor="p">
             Password
           </label>
           <input
@@ -54,14 +54,14 @@ export function LoginPage() {
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1.5 h-10 w-full rounded-lg border border-line bg-canvas px-3 text-[14px] outline-none transition focus:border-accent focus:ring-3 focus:ring-accent/15"
+            className="mt-2 h-11 w-full rounded-[10px] border border-line-strong bg-canvas px-3.5 text-[15px] outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/12"
           />
           {m.error && (
             <p role="alert" className="mt-3 rounded-lg bg-urgent-soft px-3 py-2 text-[13px] text-urgent">
               {m.error.message}
             </p>
           )}
-          <Button variant="primary" type="submit" disabled={!username || !password || m.isPending} className="mt-5 h-10 w-full">
+          <Button variant="primary" type="submit" disabled={!username || !password || m.isPending} className="mt-6 h-11 w-full text-[15px]">
             {m.isPending ? <Spinner /> : "Sign in"}
           </Button>
         </form>

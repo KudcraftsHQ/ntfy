@@ -1,4 +1,4 @@
-import { BellOff, ChevronRight, Hash, Inbox, Lock, PenSquare, Search, Settings } from "lucide-react";
+import { BellOff, ChevronRight, Inbox, Lock, PenSquare, Search, Settings } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import { config } from "../lib/config";
@@ -11,15 +11,12 @@ import { useUi } from "../store/ui";
 import type { StreamStatus } from "./StreamConnector";
 import { AppIcon, cx, IconButton, Kbd } from "./ui";
 
+/** Unread count: a plain number (calm), with an accent dot when it should draw the eye. */
 function Count({ n, muted }: { n: number; muted?: boolean }) {
   if (!n) return null;
   return (
-    <span
-      className={cx(
-        "ml-auto min-w-[20px] rounded-full px-1.5 text-center text-[11px] font-semibold leading-[18px] tabular-nums",
-        muted ? "bg-active text-ink-3" : "bg-accent text-white dark:text-[#06231d]",
-      )}
-    >
+    <span className={cx("ml-auto flex items-center gap-1.5 text-[12.5px] tabular-nums", muted ? "text-ink-3" : "font-medium text-ink-2")}>
+      {!muted && <span className="size-1.5 rounded-full bg-unread" aria-hidden />}
       {n > 999 ? "999+" : n}
     </span>
   );
@@ -50,15 +47,15 @@ export function Sidebar({
   const close = () => set({ sidebarOpen: false });
   const host = config.base_url.replace(/^https?:\/\//, "");
 
-  const rowBase = "group flex h-8 items-center gap-2.5 rounded-lg px-2 text-[13.5px] transition-colors";
-  const rowState = (active: boolean) => (active ? "bg-active text-ink font-medium" : "text-ink-2 hover:bg-hover hover:text-ink");
+  const rowBase = "group flex h-9 items-center gap-3 rounded-[10px] px-2.5 text-[14.5px] transition-colors duration-150";
+  const rowState = (active: boolean) => (active ? "bg-active text-ink" : "text-ink-2 hover:bg-hover hover:text-ink");
 
   return (
     <nav className="flex h-full w-full flex-col bg-sidebar" aria-label="Apps and topics">
-      <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
-        <img src="/static/images/pwa-192x192.png" alt="" className="size-6 rounded-md" />
+      <div className="flex h-16 shrink-0 items-center gap-2.5 px-4">
+        <img src="/static/images/pwa-192x192.png" alt="" className="size-7 rounded-lg" />
         <div className="min-w-0 leading-tight">
-          <div className="text-[14px] font-semibold tracking-[-0.01em]">ntfy</div>
+          <div className="text-[15px] font-semibold tracking-[-0.01em]">ntfy</div>
           <div className="flex items-center gap-1.5 text-[11px] text-ink-3" title={`${statusCopy[status]} · ${host}`}>
             <span
               className={cx(
@@ -70,14 +67,14 @@ export function Sidebar({
           </div>
         </div>
         <IconButton label="New message (C)" className="ml-auto" onClick={() => set({ composeOpen: true, sidebarOpen: false })}>
-          <PenSquare className="size-4" />
+          <PenSquare className="size-[17px]" />
         </IconButton>
       </div>
 
       <div className="px-3 pb-2">
         <button
           onClick={() => set({ paletteOpen: true, sidebarOpen: false })}
-          className="flex h-8 w-full items-center gap-2 rounded-lg border border-line bg-panel px-2.5 text-[13px] text-ink-3 transition hover:border-line-strong"
+          className="flex h-9 w-full items-center gap-2 rounded-[10px] border border-line bg-canvas px-2.5 text-[13.5px] text-ink-3 shadow-[0_1px_1px_rgb(20_20_40/0.03)] transition hover:border-line-strong"
         >
           <Search className="size-3.5" />
           Jump to…
@@ -90,12 +87,12 @@ export function Sidebar({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         <Link href="/" onClick={close} className={cx(rowBase, rowState(scope.kind === "all"))}>
-          <Inbox className="size-4 shrink-0" />
+          <Inbox className="size-[17px] shrink-0 stroke-[1.6]" />
           All messages
           <Count n={total} />
         </Link>
 
-        <div className="mt-5 mb-1 px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Apps</div>
+        <div className="mt-6 mb-1.5 px-2.5 text-[12.5px] font-medium text-ink-3">Apps</div>
         {loading && apps.length === 0 && (
           <div className="space-y-1.5 px-2 pt-1" aria-busy>
             {[70, 55, 80, 60].map((w) => (
@@ -119,7 +116,7 @@ export function Sidebar({
               <li key={app.id}>
                 <div className="relative">
                   <Link href={scopeHref({ app: app.id })} onClick={close} className={cx(rowBase, rowState(appActive), "pr-2")}>
-                    <AppIcon name={app.name} icon={app.icon} size={20} />
+                    <AppIcon name={app.name} icon={app.icon} size={22} />
                     <span className="truncate">{app.name}</span>
                     {!nested && denied.has(app.topics[0]?.topic) && <Lock className="size-3 shrink-0 text-ink-3" aria-label="No access" />}
                     {appMuted && <BellOff className="size-3 shrink-0 text-ink-3" aria-label="Muted" />}
@@ -137,15 +134,15 @@ export function Sidebar({
                   )}
                 </div>
                 {open && (
-                  <ul className="relative mt-px mb-1 ml-[18px] space-y-px border-l border-line pl-2">
+                  <ul className="relative mt-px mb-1.5 ml-[21px] space-y-px border-l border-line pl-2.5">
                     {app.topics.map((t) => {
                       const active = scope.kind === "topic" && scope.topic.topic === t.topic;
                       const muted = isMuted(mutes, t);
                       const noAccess = denied.has(t.topic);
                       return (
                         <li key={t.topic}>
-                          <Link href={scopeHref({ topic: t.topic })} onClick={close} className={cx(rowBase, "h-7 text-[13px]", rowState(active))}>
-                            {noAccess ? <Lock className="size-3.5 shrink-0 text-ink-3" aria-label="No access" /> : <Hash className="size-3.5 shrink-0 text-ink-3" />}
+                          <Link href={scopeHref({ topic: t.topic })} onClick={close} className={cx(rowBase, "h-8 text-[14px]", rowState(active))}>
+                            {noAccess && <Lock className="size-3.5 shrink-0 text-ink-3" aria-label="No access" />}
                             <span className={cx("truncate", (muted || noAccess) && "text-ink-3")} title={noAccess ? "No access" : undefined}>
                               {shortTopicName(t)}
                             </span>
@@ -164,10 +161,10 @@ export function Sidebar({
       </div>
 
       <div className="border-t border-line p-3">
-        <Link href="/settings" onClick={close} className={cx(rowBase, rowState(scope.kind === "settings"), "h-9")}>
-          <span className="flex size-6 items-center justify-center rounded-full bg-active text-[11px] font-semibold text-ink-2">{username.slice(0, 1).toUpperCase()}</span>
+        <Link href="/settings" onClick={close} className={cx(rowBase, rowState(scope.kind === "settings"), "h-10")}>
+          <span className="flex size-7 items-center justify-center rounded-full bg-accent-soft text-[12px] font-semibold text-accent-ink">{username.slice(0, 1).toUpperCase()}</span>
           <span className="truncate">{username}</span>
-          <Settings className="ml-auto size-4 text-ink-3" />
+          <Settings className="ml-auto size-4 stroke-[1.6] text-ink-3" />
         </Link>
       </div>
     </nav>

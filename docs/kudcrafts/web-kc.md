@@ -87,6 +87,15 @@ bun run test && bun run typecheck
 The mock also keeps one unreadable subscription (`legacy-reports`) and answers 403 to any stream or
 poll that includes it, like ntfy, to exercise the no-access path. `LOG=1` prints every request.
 
+## Theme
+
+The look (calm, banking-grade, after Mercury's product UI) lives entirely in design tokens in
+`web-kc/src/index.css`: `@theme` holds the light values, `.dark` overrides them. Components use only
+semantic names (`bg-canvas`, `bg-sidebar`, `bg-pill`, `border-line`, `text-ink-2`, `bg-accent`,
+`text-urgent`, `shadow-soft`, `font-display`, …), so re-skinning means editing tokens, not components.
+Fonts are self-hosted via @fontsource: Instrument Sans (UI) and Instrument Serif (display accents:
+sign-in and empty states), both OFL. Theme follows the system; Settings → Appearance overrides it.
+
 Code rule: no direct `useEffect`. Server data goes through TanStack Query, local history through
 Dexie live queries, UI state through a small zustand store, and `useMountEffect` (in
 `src/hooks/useMountEffect.ts`) only syncs external systems: the WebSocket, `matchMedia`, keyboard

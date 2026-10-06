@@ -1,54 +1,74 @@
 @import "tailwindcss";
-@import "@fontsource-variable/inter";
+@import "@fontsource-variable/instrument-sans/wght.css";
+@import "@fontsource/instrument-serif/latin-400.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Design tokens. A calm, banking-grade system: warm off-white and deep navy-ink surfaces,
+ * hairline borders, one restrained periwinkle accent, soft elevation. Components only use
+ * these semantic names, so the whole app re-skins here (light below, dark in .dark).
+ */
 @theme {
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 
-  /* Semantic surfaces, swapped wholesale in dark mode below. */
-  --color-canvas: #ffffff;
-  --color-sidebar: #f7f7f8;
-  --color-panel: #ffffff;
-  --color-raised: #ffffff;
-  --color-hover: #f1f1f3;
-  --color-active: #e9e9ec;
-  --color-line: #e7e7ea;
-  --color-line-strong: #d6d6db;
-  --color-ink: #17171a;
-  --color-ink-2: #4a4a52;
-  --color-ink-3: #85858e;
-  --color-accent: #1f8a74;
-  --color-accent-soft: #e3f3ef;
-  --color-accent-ink: #146a59;
-  --color-urgent: #e5484d;
-  --color-urgent-soft: #fdecec;
-  --color-high: #f08c00;
-  --color-high-soft: #fff3e0;
-  --color-unread: #1f8a74;
+  --color-canvas: #ffffff; /* main content */
+  --color-sidebar: #faf9f7; /* warm off-white rail */
+  --color-panel: #ffffff; /* dialogs, cards, detail */
+  --color-raised: #ffffff; /* inputs, secondary buttons */
+  --color-hover: #f5f4f1;
+  --color-active: #edece8;
+  --color-pill: #f1f0ec; /* soft pill buttons */
+  --color-line: #ecebe6; /* hairlines */
+  --color-line-strong: #dddcd5;
+  --color-ink: #1c1c26; /* deep navy-ink text */
+  --color-ink-2: #555562;
+  --color-ink-3: #8b8b97;
+  --color-accent: #5266eb;
+  --color-on-accent: #ffffff;
+  --color-accent-soft: #eef0fd;
+  --color-accent-ink: #3e50d8;
+  --color-positive: #1b7f4e;
+  --color-urgent: #c8364a;
+  --color-urgent-soft: #fcf0f2;
+  --color-high: #a8640a;
+  --color-high-soft: #fbf3e6;
+  --color-unread: #5266eb;
+
+  --shadow-soft: 0 1px 2px rgb(20 20 40 / 0.04), 0 6px 20px -8px rgb(20 20 40 / 0.08);
+  --shadow-float: 0 1px 2px rgb(20 20 40 / 0.05), 0 24px 48px -16px rgb(20 20 40 / 0.22);
+
+  --ease-calm: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .dark {
-  --color-canvas: #0e0e11;
-  --color-sidebar: #0a0a0c;
-  --color-panel: #121216;
-  --color-raised: #18181d;
-  --color-hover: #1a1a1f;
-  --color-active: #222228;
-  --color-line: #222228;
-  --color-line-strong: #2e2e36;
-  --color-ink: #ececf0;
-  --color-ink-2: #a8a8b3;
-  --color-ink-3: #6c6c78;
-  --color-accent: #3cc3a5;
-  --color-accent-soft: #11302a;
-  --color-accent-ink: #5fd9bd;
-  --color-urgent: #ff6369;
-  --color-urgent-soft: #3a1618;
-  --color-high: #ffa94d;
-  --color-high-soft: #35240f;
-  --color-unread: #3cc3a5;
+  --color-canvas: #15151c;
+  --color-sidebar: #111117;
+  --color-panel: #18181f;
+  --color-raised: #1d1d26;
+  --color-hover: #1d1d26;
+  --color-active: #262631;
+  --color-pill: #24242e;
+  --color-line: #24242d;
+  --color-line-strong: #32323d;
+  --color-ink: #ededf2;
+  --color-ink-2: #a9a9b6;
+  --color-ink-3: #71717f;
+  --color-accent: #7584ff;
+  --color-on-accent: #ffffff;
+  --color-accent-soft: #23264a;
+  --color-accent-ink: #a5aeff;
+  --color-positive: #4cc38a;
+  --color-urgent: #ff6b7d;
+  --color-urgent-soft: #35181f;
+  --color-high: #f0a543;
+  --color-high-soft: #30230e;
+  --color-unread: #8794ff;
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.4), 0 24px 56px -16px rgb(0 0 0 / 0.7);
 }
 
 html,
@@ -58,7 +78,8 @@ body,
 }
 body {
   @apply bg-canvas text-ink font-sans antialiased;
-  font-feature-settings: "cv11", "ss01";
+  font-size: 14.5px;
+  letter-spacing: -0.003em;
   -webkit-tap-highlight-color: transparent;
 }
 ::selection {
