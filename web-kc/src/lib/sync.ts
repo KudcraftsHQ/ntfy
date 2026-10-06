@@ -140,7 +140,7 @@ export function useTopicMetaSync(apps: AppView[]) {
   const rows = apps.flatMap((a) =>
     a.topics.map((t) => ({
       topic: t.topic,
-      title: a.topics.length > 1 || t.topic !== a.id ? `${a.name} · ${shortTopicName(t)}` : a.name,
+      title: a.topics.length > 1 || t.topic !== a.id ? `${a.name} / ${shortTopicName(t)}` : a.name,
       icon: a.icon,
       sound: t.sound,
     })),

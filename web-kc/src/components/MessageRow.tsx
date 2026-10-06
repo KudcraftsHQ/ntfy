@@ -9,11 +9,12 @@ import { AppIcon, cx } from "./ui";
 export const PriorityPill = ({ p }: { p?: number }) => {
   const meta = priorityMeta(p);
   if (meta.tone !== "urgent" && meta.tone !== "high") return null;
+  // A hairline-outlined status badge, like a "Failed" transaction label.
   return (
     <span
       className={cx(
-        "inline-flex h-[18px] shrink-0 items-center rounded-md px-1.5 text-[10.5px] font-semibold uppercase tracking-[0.04em]",
-        meta.tone === "urgent" ? "bg-urgent-soft text-urgent" : "bg-high-soft text-high",
+        "inline-flex h-[20px] shrink-0 items-center rounded-[6px] border px-1.5 text-[11.5px] font-medium",
+        meta.tone === "urgent" ? "border-urgent/35 bg-urgent-soft text-urgent" : "border-high/30 bg-high-soft text-high",
       )}
     >
       {meta.label}
@@ -40,14 +41,14 @@ export const MessageRow = memo(function MessageRow({ m, app, topic, showSource, 
   const p = m.priority ?? 3;
   const unread = m.read === 0;
   const label = app && topic ? topicLabel(app, topic) : null;
-  const source = app ? (label ? `${app.name} · ${label}` : app.name) : m.topic;
+  const source = app ? (label ? `${app.name} / ${label}` : app.name) : m.topic;
   const meta = (
     <span className="ml-auto flex shrink-0 items-center gap-2 self-start pt-px">
       {m.attachment && <Paperclip className="size-3 text-ink-3" aria-label="Attachment" />}
-      <time className={cx("text-[12px] tabular-nums", unread ? "font-medium text-ink-2" : "text-ink-3")} dateTime={new Date(m.time * 1000).toISOString()}>
+      <time className={cx("text-[12.5px] tabular-nums", unread ? "text-ink" : "text-ink-3")} dateTime={new Date(m.time * 1000).toISOString()}>
         {relativeTime(m.time)}
       </time>
-      <span aria-label={unread ? "Unread" : undefined} className={cx("size-2 rounded-full", unread ? "bg-unread" : "bg-transparent")} />
+      <span aria-label={unread ? "Unread" : undefined} className={cx("size-[7px] rounded-full", unread ? "bg-unread" : "bg-transparent")} />
     </span>
   );
 
@@ -57,34 +58,34 @@ export const MessageRow = memo(function MessageRow({ m, app, topic, showSource, 
       data-selected={selected || undefined}
       onClick={() => onSelect(m.id)}
       className={cx(
-        "group relative flex w-full gap-3 rounded-xl px-3 py-3 text-left transition-colors",
-        selected ? "bg-active" : "hover:bg-hover",
+        "group relative flex w-full gap-3.5 border-b border-line px-5 py-3 text-left transition-colors duration-150 md:px-7",
+        selected ? "bg-hover" : "hover:bg-hover/70",
       )}
     >
-      {p >= 4 && <span aria-hidden className={cx("absolute top-3 bottom-3 left-0 w-[3px] rounded-full", p >= 5 ? "bg-urgent" : "bg-high")} />}
-      <div className="relative">
-        <AppIcon name={app?.name ?? m.topic} icon={m.icon || app?.icon} size={36} />
+      {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-[2px] bg-accent" />}
+      <div className="relative pt-0.5">
+        <AppIcon name={app?.name ?? m.topic} icon={m.icon || app?.icon} size={34} />
       </div>
       <div className="min-w-0 flex-1">
         {showSource && (
           <div className="flex items-center gap-2">
-            <span className="truncate text-[12px] font-medium text-ink-3">{source}</span>
+            <span className="truncate text-[12.5px] text-ink-3">{source}</span>
             {meta}
           </div>
         )}
         <div className={cx("flex items-center gap-2", showSource && "mt-0.5")}>
-          <h3 className={cx("min-w-0 text-[14px] leading-snug", m.title ? "truncate" : "line-clamp-2", unread ? "font-semibold text-ink" : "font-medium text-ink-2")}>
+          <h3 className={cx("min-w-0 text-[15px] leading-snug tracking-[-0.005em]", m.title ? "truncate" : "line-clamp-2", unread ? "font-medium text-ink" : "text-ink-2")}>
             {emojis && <span className="mr-1">{emojis}</span>}
             {title}
           </h3>
           <PriorityPill p={p} />
           {!showSource && meta}
         </div>
-        {preview && <p className="mt-0.5 line-clamp-2 text-[13px] leading-[1.45] text-ink-3">{preview}</p>}
+        {preview && <p className="mt-1 line-clamp-2 text-[13.5px] leading-[1.5] text-ink-3">{preview}</p>}
         {chips.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1">
+          <div className="mt-2 flex flex-wrap gap-1">
             {chips.map((t) => (
-              <span key={t} className="rounded-md bg-hover px-1.5 py-px text-[11px] text-ink-3 group-hover:bg-active">
+              <span key={t} className="rounded-[6px] border border-line px-1.5 py-px text-[11.5px] text-ink-3">
                 {t}
               </span>
             ))}

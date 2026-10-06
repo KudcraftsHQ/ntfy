@@ -15,7 +15,7 @@ import { AppIcon, Button, cx, IconButton } from "./ui";
 function ActionButton({ a }: { a: Action }) {
   const m = useMutation({ mutationFn: () => runAction(a) });
   return (
-    <Button size="sm" onClick={() => m.mutate()} disabled={m.isPending} title={m.error ? String(m.error.message) : a.url}>
+    <Button onClick={() => m.mutate()} disabled={m.isPending} title={m.error ? String(m.error.message) : a.url}>
       {a.action === "view" ? <ExternalLink className="size-3.5" /> : a.action === "copy" ? <Copy className="size-3.5" /> : <Zap className="size-3.5" />}
       {a.label}
       {m.isSuccess && !!m.data && <Check className="size-3.5 text-accent" />}
@@ -28,10 +28,10 @@ export function MessageDetail({ m, app, topic, onClose }: { m: StoredMessage; ap
   const [copied, setCopied] = useState(false);
   const emojis = emojiTags(m.tags).join(" ");
   const chips = plainTags(m.tags);
+  const click = safeUrl(m.click);
   // A "view" action pointing at the click URL would just duplicate the Open button.
   const actions = visibleActions(m.actions).filter((a) => !(a.action === "view" && safeUrl(a.url) === click));
   const pm = priorityMeta(m.priority);
-  const click = safeUrl(m.click);
 
   const copy = async () => {
     await navigator.clipboard.writeText([m.title, m.message].filter(Boolean).join("\n\n"));
@@ -41,13 +41,15 @@ export function MessageDetail({ m, app, topic, onClose }: { m: StoredMessage; ap
 
   return (
     <article className="flex h-full min-h-0 flex-col bg-panel" aria-label="Message">
-      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-line px-3">
-        <IconButton label="Back (Esc)" onClick={onClose} className="lg:hidden">
-          <ArrowLeft className="size-4" />
-        </IconButton>
-        <div className="ml-1 flex min-w-0 items-center gap-2 text-[12.5px] text-ink-3">
-          <AppIcon name={app?.name ?? m.topic} icon={app?.icon} size={18} />
-          <span className="truncate font-medium text-ink-2">{app?.name ?? m.topic}</span>
+      <header className="flex h-16 shrink-0 items-center gap-1 border-b border-line px-3 md:px-5">
+        <span className="contents lg:hidden">
+          <IconButton label="Back (Esc)" onClick={onClose}>
+            <ArrowLeft className="size-4" />
+          </IconButton>
+        </span>
+        <div className="ml-1 flex min-w-0 items-center gap-2 text-[13.5px] text-ink-3">
+          <AppIcon name={app?.name ?? m.topic} icon={app?.icon} size={20} />
+          <span className="truncate text-ink-2">{app?.name ?? m.topic}</span>
           {app && topic && topicLabel(app, topic) && <span className="truncate">/ {topicLabel(app, topic)}</span>}
         </div>
         <div className="ml-auto flex items-center">
@@ -72,30 +74,28 @@ export function MessageDetail({ m, app, topic, onClose }: { m: StoredMessage; ap
           >
             <Trash2 className="size-4" />
           </IconButton>
-          <IconButton label="Close (Esc)" onClick={onClose} className="hidden lg:inline-flex">
-            <X className="size-4" />
-          </IconButton>
+          <span className="hidden lg:contents">
+            <IconButton label="Close (Esc)" onClick={onClose}>
+              <X className="size-4" />
+            </IconButton>
+          </span>
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="animate-in mx-auto max-w-2xl px-6 py-6">
-          <div className="flex items-start gap-3.5">
-            <AppIcon name={app?.name ?? m.topic} icon={m.icon || app?.icon} size={44} />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <PriorityPill p={m.priority} />
-                {pm.tone === "low" && <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-ink-3">{pm.label} priority</span>}
-              </div>
-              <h2 className="mt-0.5 text-[19px] leading-snug font-semibold tracking-[-0.01em] text-ink">
-                {emojis && <span className="mr-1.5">{emojis}</span>}
-                {m.title || topic?.name || m.topic}
-              </h2>
-              <p className="mt-1 text-[12.5px] text-ink-3">{fullTime(m.time)}</p>
-            </div>
+        <div className="animate-in mx-auto max-w-2xl px-6 py-8 md:px-8">
+          <AppIcon name={app?.name ?? m.topic} icon={m.icon || app?.icon} size={44} />
+          <h2 className="mt-5 text-[26px] leading-[1.2] font-normal tracking-[-0.02em] text-ink">
+            {emojis && <span className="mr-2">{emojis}</span>}
+            {m.title || topic?.name || m.topic}
+          </h2>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[13.5px] text-ink-3">
+            <span className="tabular-nums">{fullTime(m.time)}</span>
+            {(pm.tone === "urgent" || pm.tone === "high") && <PriorityPill p={m.priority} />}
+            {pm.tone === "low" && <span>· {pm.label} priority</span>}
           </div>
 
-          <div className={cx("mt-5", !m.title && "text-[15px]")}>
+          <div className={cx("mt-6 border-t border-line pt-6", !m.title && "text-[15px]")}>
             <MessageBody m={m} />
           </div>
 
@@ -108,7 +108,7 @@ export function MessageDetail({ m, app, topic, onClose }: { m: StoredMessage; ap
           {(click || actions.length > 0) && (
             <div className="mt-6 flex flex-wrap gap-2">
               {click && (
-                <Button variant="primary" size="sm" onClick={() => openSafe(click)} title={click}>
+                <Button variant="primary" onClick={() => openSafe(click)} title={click}>
                   <ExternalLink className="size-3.5" />
                   Open link
                 </Button>
@@ -122,14 +122,14 @@ export function MessageDetail({ m, app, topic, onClose }: { m: StoredMessage; ap
           {chips.length > 0 && (
             <div className="mt-6 flex flex-wrap gap-1.5">
               {chips.map((t) => (
-                <span key={t} className="rounded-md border border-line px-2 py-0.5 text-[11.5px] text-ink-3">
+                <span key={t} className="rounded-[6px] border border-line px-2 py-0.5 text-[12px] text-ink-3">
                   {t}
                 </span>
               ))}
             </div>
           )}
 
-          {click && <p className="mt-6 truncate text-[12px] text-ink-3">{click}</p>}
+          {click && <p className="mt-6 truncate border-t border-line pt-4 text-[12.5px] text-ink-3">{click}</p>}
         </div>
       </div>
     </article>

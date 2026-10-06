@@ -19,8 +19,8 @@ import { allTopics } from "../lib/catalog";
 function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
     <section className="border-b border-line py-8 last:border-0">
-      <h2 className="text-[14px] font-semibold">{title}</h2>
-      {description && <p className="mt-1 text-[13px] text-ink-3">{description}</p>}
+      <h2 className="text-[16px] font-medium">{title}</h2>
+      {description && <p className="mt-1 text-[13.5px] text-ink-3">{description}</p>}
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -30,8 +30,8 @@ function Row({ label, hint, children }: { label: string; hint?: ReactNode; child
   return (
     <div className="flex items-center justify-between gap-6 py-2.5">
       <div className="min-w-0">
-        <div className="text-[13.5px] text-ink">{label}</div>
-        {hint && <div className="mt-0.5 text-[12.5px] text-ink-3">{hint}</div>}
+        <div className="text-[14.5px] text-ink">{label}</div>
+        {hint && <div className="mt-0.5 text-[13px] text-ink-3">{hint}</div>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -70,14 +70,14 @@ export function SettingsPage({ apps }: { apps: AppView[] }) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-3 md:px-5">
-        <IconButton label="Menu" className="-ml-1 md:hidden" onClick={() => ui.set({ sidebarOpen: true })}>
-          <Menu className="size-4.5" />
+      <header className="flex h-16 shrink-0 items-center gap-2 border-b border-line px-3 md:hidden">
+        <IconButton label="Menu" className="-ml-1" onClick={() => ui.set({ sidebarOpen: true })}>
+          <Menu className="size-[18px]" />
         </IconButton>
-        <h1 className="text-[15px] font-semibold">Settings</h1>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl px-5 pb-16 md:px-8">
+          <h1 className="pt-10 pb-2 text-[30px] font-normal tracking-[-0.02em]">Settings</h1>
           <Section title="Account">
             <Row label={session?.username ?? ""} hint={config.base_url.replace(/^https?:\/\//, "")}>
               <Button onClick={() => out.mutate()} disabled={out.isPending}>
@@ -109,7 +109,7 @@ export function SettingsPage({ apps }: { apps: AppView[] }) {
             </Row>
             {pushToggle.error && <p className="mt-2 text-[12.5px] text-urgent">{pushToggle.error.message}</p>}
 
-            <div className="mt-5 overflow-hidden rounded-xl border border-line">
+            <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-panel shadow-soft">
               {apps.length === 0 && <p className="px-4 py-3 text-[13px] text-ink-3">No apps yet.</p>}
               {apps.map((a) => (
                 <div key={a.id} className="border-b border-line last:border-0">
