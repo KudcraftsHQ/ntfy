@@ -695,6 +695,12 @@ func TestServer_PublishAndPollSince(t *testing.T) {
 		require.Equal(t, 2, len(messages))
 		require.Equal(t, "test 1", messages[0].Message)
 
+		// kudcrafts: day units (clients send since=7d / 90d for catalog backfill)
+		response = request(t, s, "GET", "/mytopic/json?poll=1&since=7d", "", nil)
+		require.Equal(t, 200, response.Code)
+		messages = toMessages(t, response.Body.String())
+		require.Equal(t, 2, len(messages))
+
 		response = request(t, s, "GET", "/mytopic/json?poll=1&since=100ms", "", nil)
 		messages = toMessages(t, response.Body.String())
 		require.Equal(t, 1, len(messages))

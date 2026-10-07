@@ -1818,7 +1818,7 @@ func parseSince(r *http.Request, poll bool) (model.SinceMarker, error) {
 		return model.NewSinceID(since), nil
 	} else if s, err := strconv.ParseInt(since, 10, 64); err == nil {
 		return model.NewSinceTime(s), nil
-	} else if d, err := time.ParseDuration(since); err == nil {
+	} else if d, err := util.ParseDuration(since); err == nil {
 		return model.NewSinceTime(time.Now().Add(-1 * d).Unix()), nil
 	}
 	return model.SinceNoMessages, errHTTPBadRequestSinceInvalid
