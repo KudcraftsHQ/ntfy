@@ -1,4 +1,5 @@
-export type SoundClass = "silent" | "default" | "alert" | "urgent";
+export type SoundClass = "silent" | "default" | "alert" | "urgent" | "cash" | "done" | "fail" | "ask";
+export type SoundTheme = "wood" | "glass" | "soft" | "chip" | "pluck" | "keys" | "space" | "cabin" | "cockpit" | "terminal";
 
 export interface ServerConfig {
   base_url: string;
@@ -76,6 +77,7 @@ export interface Catalog {
   base_url: string;
   history_days: number;
   sync_topic: string;
+  sound_theme: SoundTheme; // server-wide; `cabin` when the server does not send one
   apps: CatalogApp[];
 }
 

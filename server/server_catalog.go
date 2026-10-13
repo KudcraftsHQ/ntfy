@@ -32,6 +32,8 @@ import (
 const (
 	tagCatalog                 = "catalog"
 	apiCatalogPath             = "/v1/catalog"
+	apiCatalogSoundsPath       = "/v1/catalog/sounds"
+	apiCatalogSettingsPath     = "/v1/catalog/settings"
 	catalogReloadInterval      = 30 * time.Second
 	catalogTouchInterval       = 10 * time.Minute
 	catalogReloadDebounce      = 2 * time.Second // publish-driven reloads are coalesced into one per window
@@ -53,6 +55,7 @@ var (
 	errHTTPBadRequestCatalogSound      = &errHTTP{40083, http.StatusBadRequest, "invalid request: invalid sound class", "", nil}
 	errHTTPBadRequestCatalogAppPrefix  = &errHTTP{40084, http.StatusBadRequest, "invalid request: app is not a prefix of topic", "", nil}
 	errHTTPBadRequestCatalogTopic      = &errHTTP{40085, http.StatusBadRequest, "invalid request: invalid topic", "", nil}
+	errHTTPBadRequestCatalogTheme      = &errHTTP{40086, http.StatusBadRequest, "invalid request: invalid sound theme", "", nil}
 	errHTTPNotFoundCatalogEntry        = &errHTTP{40480, http.StatusNotFound, "not found: catalog entry not found", "", nil}
 	errHTTPConflictCatalogAppHasTopics = &errHTTP{40980, http.StatusConflict, "conflict: app still has topics", "", nil}
 )
@@ -64,7 +67,24 @@ type apiCatalogResponse struct {
 	BaseURL     string           `json:"base_url"`
 	HistoryDays int              `json:"history_days"`
 	SyncTopic   string           `json:"sync_topic"`
+	SoundTheme  string           `json:"sound_theme"`
 	Apps        []*apiCatalogApp `json:"apps"`
+}
+
+type apiCatalogSoundsResponse struct {
+	Theme        string             `json:"theme"`
+	DefaultTheme string             `json:"default_theme"`
+	Themes       []string           `json:"themes"`
+	Sounds       []*apiCatalogSound `json:"sounds"`
+}
+
+type apiCatalogSound struct {
+	Name    string `json:"name"`
+	Meaning string `json:"meaning"`
+}
+
+type apiCatalogSettings struct {
+	SoundTheme *string `json:"sound_theme"`
 }
 
 type apiCatalogApp struct {
@@ -107,6 +127,7 @@ type catalog struct {
 	mu        sync.RWMutex
 	apps      map[string]*user.CatalogApp
 	topics    map[string]*user.CatalogTopic
+	theme     string            // server-wide sound theme
 	version   int64             // unix ms of the last content change
 	hash      string            // content hash of the snapshot, to detect changes
 	views     map[string]string // username -> hash of the user's view, to detect per-user changes
@@ -216,9 +237,14 @@ func (c *catalog) reload() error {
 		topicsMap[t.Topic] = t
 		fmt.Fprintf(contentHash, "t\x00%s\x00%s\x00%s\x00%s\x00%t\x00%t\n", t.Topic, t.AppID, t.Name, t.Sound, t.Hidden, t.Locked)
 	}
+	theme, err := c.store.SoundTheme()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(contentHash, "s\x00%s\n", theme)
 	newHash := hex.EncodeToString(contentHash.Sum(nil))
 	c.mu.Lock()
-	c.apps, c.topics = appsMap, topicsMap
+	c.apps, c.topics, c.theme = appsMap, topicsMap, theme
 	if newHash != c.hash {
 		c.hash = newHash
 		now := time.Now().UnixMilli()
@@ -238,13 +264,14 @@ func (c *catalog) notifyChangedViews() error {
 	if err != nil {
 		return err
 	}
+	theme := c.soundTheme() // part of every view: a theme change is a sync event for everyone
 	seen := make(map[string]struct{}, len(users))
 	for _, u := range users {
 		seen[u.Name] = struct{}{}
 		if u.Name == user.Everyone {
 			continue
 		}
-		hash := c.viewHash(c.view(u))
+		hash := c.viewHash(c.view(u), theme)
 		previous, known := c.views[u.Name]
 		c.views[u.Name] = hash
 		if known && previous != hash && u.SyncTopic != "" {
@@ -319,6 +346,12 @@ func (c *catalog) viewHash(entries []*catalogViewEntry, extra ...string) string 
 		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\n", e.topic.Topic, e.app.ID, e.app.Name, e.app.Icon, e.app.Sound, e.topic.Name, e.sound, e.permission)
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (c *catalog) soundTheme() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.theme
 }
 
 func (c *catalog) currentVersion() int64 {
@@ -549,7 +582,8 @@ func (s *Server) handleCatalogGet(w http.ResponseWriter, r *http.Request, v *vis
 	// ACL-only change yields a 200, and a change to topics this user cannot see yields a 304.
 	// The non-view fields of the response are part of it too, so a config change is never a 304.
 	historyDays := catalogHistoryDays(s.config.CacheDuration)
-	etag := fmt.Sprintf(`"%s"`, s.catalog.viewHash(entries, s.config.BaseURL, u.SyncTopic, strconv.Itoa(historyDays))[:20])
+	theme := s.catalog.soundTheme()
+	etag := fmt.Sprintf(`"%s"`, s.catalog.viewHash(entries, s.config.BaseURL, u.SyncTopic, strconv.Itoa(historyDays), theme)[:20])
 	if all {
 		etag = fmt.Sprintf(`"%d-%d-all"`, version, historyDays)
 	}
@@ -566,6 +600,7 @@ func (s *Server) handleCatalogGet(w http.ResponseWriter, r *http.Request, v *vis
 		BaseURL:     s.config.BaseURL,
 		HistoryDays: historyDays,
 		SyncTopic:   u.SyncTopic,
+		SoundTheme:  theme,
 		Apps:        make([]*apiCatalogApp, 0),
 	}
 	var current *apiCatalogApp
@@ -715,6 +750,41 @@ func (s *Server) handleCatalogTopicDelete(w http.ResponseWriter, r *http.Request
 	return s.writeJSON(w, newSuccessResponse())
 }
 
+func (s *Server) handleCatalogSoundsGet(w http.ResponseWriter, _ *http.Request, _ *visitor) error {
+	response := &apiCatalogSoundsResponse{
+		Theme:        s.catalog.soundTheme(),
+		DefaultTheme: user.CatalogSoundThemeDefault,
+		Themes:       user.CatalogSoundThemes(),
+		Sounds:       make([]*apiCatalogSound, 0),
+	}
+	for _, c := range user.CatalogSoundClasses() {
+		if c.Name == user.CatalogSoundSilent {
+			continue // no clip, so nothing for a client to list or preview
+		}
+		response.Sounds = append(response.Sounds, &apiCatalogSound{Name: c.Name, Meaning: c.Meaning})
+	}
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Access-Control-Allow-Origin", s.config.AccessControlAllowOrigin)
+	return s.writeJSON(w, response)
+}
+
+func (s *Server) handleCatalogSettingsPut(w http.ResponseWriter, r *http.Request, v *visitor) error {
+	req, err := readJSONWithLimit[apiCatalogSettings](r.Body, jsonBodyBytesLimit, true)
+	if err != nil {
+		return err
+	}
+	if req.SoundTheme != nil {
+		if err := s.catalog.store.SetSoundTheme(*req.SoundTheme); err != nil {
+			return catalogToHTTPError(err)
+		}
+		logvr(v, r).Tag(tagCatalog).Field("sound_theme", *req.SoundTheme).Info("Catalog sound theme set by admin")
+		if err := s.catalog.reload(); err != nil {
+			return err
+		}
+	}
+	return s.writeJSON(w, &apiCatalogSettings{SoundTheme: util.String(s.catalog.soundTheme())})
+}
+
 func catalogToHTTPError(err error) error {
 	switch {
 	case errors.Is(err, user.ErrCatalogInvalidAppID):
@@ -725,6 +795,8 @@ func catalogToHTTPError(err error) error {
 		return errHTTPBadRequestCatalogIcon
 	case errors.Is(err, user.ErrCatalogInvalidSound):
 		return errHTTPBadRequestCatalogSound
+	case errors.Is(err, user.ErrCatalogInvalidTheme):
+		return errHTTPBadRequestCatalogTheme
 	case errors.Is(err, user.ErrCatalogAppNotPrefix):
 		return errHTTPBadRequestCatalogAppPrefix
 	case errors.Is(err, user.ErrCatalogInvalidTopic):
@@ -745,6 +817,10 @@ func (s *Server) handleCatalogRoute(w http.ResponseWriter, r *http.Request, v *v
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == apiCatalogPath:
 		return true, s.ensureCatalog(s.limitRequests(s.ensureUser(s.handleCatalogGet)))(w, r, v)
+	case r.Method == http.MethodGet && r.URL.Path == apiCatalogSoundsPath:
+		return true, s.ensureCatalog(s.limitRequests(s.ensureUser(s.handleCatalogSoundsGet)))(w, r, v)
+	case r.Method == http.MethodPut && r.URL.Path == apiCatalogSettingsPath:
+		return true, s.ensureCatalog(s.ensureAdmin(s.handleCatalogSettingsPut))(w, r, v)
 	case r.Method == http.MethodPut && apiCatalogAppPathRegex.MatchString(r.URL.Path):
 		return true, s.ensureCatalog(s.ensureAdmin(s.handleCatalogAppPut))(w, r, v)
 	case r.Method == http.MethodDelete && apiCatalogAppPathRegex.MatchString(r.URL.Path):

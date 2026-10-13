@@ -44,6 +44,10 @@ const (
 			last_publish INT  NOT NULL DEFAULT 0
 		);
 		CREATE INDEX IF NOT EXISTS idx_catalog_topic_app ON catalog_topic (app_id);
+		CREATE TABLE IF NOT EXISTS catalog_setting (
+			key   TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		);
 	`
 	catalogSelectAppsQuery   = `SELECT id, name, icon, sound, locked, created, updated FROM catalog_app ORDER BY id`
 	catalogSelectTopicsQuery = `SELECT topic, app_id, name, sound, hidden, locked, created, updated, last_publish FROM catalog_topic ORDER BY topic`
@@ -76,6 +80,9 @@ const (
 	catalogDeleteAppQuery        = `DELETE FROM catalog_app WHERE id = ?`
 	catalogDeleteAppTopicsQuery  = `DELETE FROM catalog_topic WHERE app_id = ?`
 	catalogDeleteTopicQuery      = `DELETE FROM catalog_topic WHERE topic = ?`
+	catalogSelectSettingQuery    = `SELECT value FROM catalog_setting WHERE key = ?`
+	catalogUpsertSettingQuery    = `INSERT INTO catalog_setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`
+	catalogSettingSoundTheme     = "sound_theme"
 	catalogMaxNameLength         = 64
 	catalogMaxIconLength         = 512
 	catalogSyncTopicPrefixForApp = syncTopicPrefix
@@ -85,10 +92,31 @@ const (
 const (
 	CatalogSoundDefault = "default" // The default sound class of a new app
 	CatalogSoundInherit = ""        // Topic sound: inherit from the app
+	CatalogSoundSilent  = "silent"  // The one sound class without a clip
+
+	CatalogSoundThemeDefault = "cabin" // The server-wide sound theme until an admin picks another
 )
 
+// CatalogSoundClass is a sound class and what it is meant for
+type CatalogSoundClass struct {
+	Name    string
+	Meaning string
+}
+
 var (
-	catalogSounds       = []string{"silent", "default", "alert", "urgent"}
+	// catalogSoundClasses is the closed set of sound classes. Clients ship one clip per theme for
+	// every class except silent, named kc_<theme>_<class>.
+	catalogSoundClasses = []CatalogSoundClass{
+		{CatalogSoundSilent, "No sound"},
+		{"default", "Ordinary message"},
+		{"alert", "Look at this soon"},
+		{"urgent", "Prod broken, money at risk"},
+		{"cash", "Order paid"},
+		{"done", "Job or agent finished"},
+		{"fail", "Build, deploy or job failed"},
+		{"ask", "An agent needs an answer"},
+	}
+	catalogSoundThemes  = []string{"wood", "glass", "soft", "chip", "pluck", "keys", "space", "cabin", "cockpit", "terminal"}
 	catalogAppIDRegex   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 	catalogNameBadChars = "<>"
 
@@ -100,7 +128,8 @@ var (
 	ErrCatalogInvalidAppID = errors.New("invalid catalog app id")
 	ErrCatalogInvalidName  = errors.New("invalid catalog name")
 	ErrCatalogInvalidIcon  = errors.New("invalid catalog icon URL (https only, <=512 chars)")
-	ErrCatalogInvalidSound = errors.New("invalid sound class (silent, default, alert, urgent)")
+	ErrCatalogInvalidSound = errors.New("invalid sound class (silent, default, alert, urgent, cash, done, fail, ask)")
+	ErrCatalogInvalidTheme = errors.New("invalid sound theme (wood, glass, soft, chip, pluck, keys, space, cabin, cockpit, terminal)")
 	ErrCatalogAppNotPrefix = errors.New("app is not a prefix of topic")
 	ErrCatalogNotFound     = errors.New("catalog entry not found")
 	ErrCatalogAppHasTopics = errors.New("app still has topics")
@@ -295,6 +324,30 @@ func (c *CatalogStore) DeleteTopic(topic string) error {
 	return c.execExpectRow(catalogDeleteTopicQuery, topic)
 }
 
+// SoundTheme returns the server-wide sound theme: CatalogSoundThemeDefault until one is set, and
+// also if the stored value is not a theme this version knows (e.g. after a rollback).
+func (c *CatalogStore) SoundTheme() (string, error) {
+	var theme string
+	if err := c.db.QueryRow(catalogSelectSettingQuery, catalogSettingSoundTheme).Scan(&theme); errors.Is(err, sql.ErrNoRows) {
+		return CatalogSoundThemeDefault, nil
+	} else if err != nil {
+		return "", err
+	}
+	if ValidateCatalogSoundTheme(theme) != nil {
+		return CatalogSoundThemeDefault, nil
+	}
+	return theme, nil
+}
+
+// SetSoundTheme sets the server-wide sound theme
+func (c *CatalogStore) SetSoundTheme(theme string) error {
+	if err := ValidateCatalogSoundTheme(theme); err != nil {
+		return err
+	}
+	_, err := c.db.Exec(catalogUpsertSettingQuery, catalogSettingSoundTheme, theme)
+	return err
+}
+
 func (c *CatalogStore) execExpectRow(query string, args ...any) error {
 	res, err := c.db.Exec(query, args...)
 	if err != nil {
@@ -347,9 +400,9 @@ func ValidateCatalogIcon(icon string) error {
 	return nil
 }
 
-// ValidateCatalogSound checks that the sound is one of the four sound classes
+// ValidateCatalogSound checks that the sound is one of the sound classes
 func ValidateCatalogSound(sound string) error {
-	if !slices.Contains(catalogSounds, sound) {
+	if !slices.ContainsFunc(catalogSoundClasses, func(c CatalogSoundClass) bool { return c.Name == sound }) {
 		return ErrCatalogInvalidSound
 	}
 	return nil
@@ -357,7 +410,29 @@ func ValidateCatalogSound(sound string) error {
 
 // CatalogSounds returns the valid sound classes
 func CatalogSounds() []string {
-	return slices.Clone(catalogSounds)
+	sounds := make([]string, 0, len(catalogSoundClasses))
+	for _, c := range catalogSoundClasses {
+		sounds = append(sounds, c.Name)
+	}
+	return sounds
+}
+
+// CatalogSoundClasses returns the valid sound classes with their meanings
+func CatalogSoundClasses() []CatalogSoundClass {
+	return slices.Clone(catalogSoundClasses)
+}
+
+// ValidateCatalogSoundTheme checks that the theme is one of the sound themes
+func ValidateCatalogSoundTheme(theme string) error {
+	if !slices.Contains(catalogSoundThemes, theme) {
+		return ErrCatalogInvalidTheme
+	}
+	return nil
+}
+
+// CatalogSoundThemes returns the valid sound themes
+func CatalogSoundThemes() []string {
+	return slices.Clone(catalogSoundThemes)
 }
 
 // CatalogAppIDForTopic derives the default app ID of a topic: the part before the first '-',

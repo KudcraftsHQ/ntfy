@@ -20,7 +20,7 @@ import { cx } from "./ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export function Shell() {
-  const { apps: catalogApps, syncTopic, historyDays, isLoading, error, refetch } = useApps();
+  const { apps: catalogApps, account, catalog, syncTopic, historyDays, isLoading, error, refetch } = useApps();
   // Without catalog icons (catalog off, or publisher never sent X-App-Icon), borrow the icon of the
   // app's most recent message that carried one.
   const msgIcons =
@@ -92,7 +92,7 @@ export function Shell() {
 
       <main className="min-w-0 flex-1">
         {scope.kind === "settings" ? (
-          <SettingsPage apps={apps} />
+          <SettingsPage apps={apps} serverTheme={catalog?.sound_theme} isAdmin={account?.role === "admin"} />
         ) : (
           <Inbox key={scopeKey(scope)} scope={scope} apps={apps} denied={access.denied} syncing={isLoading || backfill.isFetching} error={(error ?? backfill.error) as Error | null} onRetry={() => void refetch()} />
         )}

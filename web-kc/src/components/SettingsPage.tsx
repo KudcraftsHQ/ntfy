@@ -1,16 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Bell, BellOff, Menu, Monitor, Moon, Sun } from "lucide-react";
+import { Bell, BellOff, Menu, Monitor, Moon, Play, Sun } from "lucide-react";
 import type { ReactNode } from "react";
-import { logout } from "../lib/api";
+import { logout, setServerSoundTheme } from "../lib/api";
 import { clearLocalSession } from "../lib/auth";
 import { isMuted } from "../lib/catalog";
 import { config } from "../lib/config";
 import { db } from "../lib/db";
+import { playSound } from "../lib/notify";
 import { disablePush, enablePush, pushState, requestNotificationPermission } from "../lib/push";
 import { useSession } from "../lib/session";
-import { reconcilePush } from "../lib/sync";
-import type { AppView } from "../lib/types";
+import { resolveSoundTheme, SOUND_THEMES, SOUNDS, toSoundTheme } from "../lib/sounds";
+import { qk, reconcilePush } from "../lib/sync";
+import type { AppView, SoundTheme } from "../lib/types";
 import { useUi, type Theme } from "../store/ui";
 import { ShortcutList } from "./HelpDialog";
 import { AppIcon, Button, cx, IconButton, Spinner, Switch } from "./ui";
@@ -40,7 +42,10 @@ function Row({ label, hint, children }: { label: string; hint?: ReactNode; child
 
 const pushCopy = { unsupported: "Not available in this browser", denied: "Blocked in browser settings", off: "Off", on: "On — alerts arrive even with ntfy closed" };
 
-export function SettingsPage({ apps }: { apps: AppView[] }) {
+const themeLabel = (t: string) => t[0].toUpperCase() + t.slice(1);
+const selectClass = "h-9 rounded-lg border border-line-strong bg-raised px-2.5 text-[13.5px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-45";
+
+export function SettingsPage({ apps, serverTheme: rawServerTheme, isAdmin }: { apps: AppView[]; serverTheme?: SoundTheme; isAdmin?: boolean }) {
   const ui = useUi();
   const session = useSession((s) => s.session);
   const qc = useQueryClient();
@@ -49,6 +54,12 @@ export function SettingsPage({ apps }: { apps: AppView[] }) {
   const pushToggle = useMutation({
     mutationFn: (on: boolean) => (on ? enablePush(unmutedTopics()) : disablePush()),
     onSuccess: (s) => qc.setQueryData(["push-state"], s),
+  });
+  const serverTheme = toSoundTheme(rawServerTheme); // an older server sends none: cabin
+  const theme = resolveSoundTheme(ui.soundTheme, serverTheme);
+  const setServerTheme = useMutation({
+    mutationFn: setServerSoundTheme,
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.catalog }),
   });
   const count = useLiveQuery(() => db.messages.count(), []);
   const out = useMutation({
@@ -107,7 +118,53 @@ export function SettingsPage({ apps }: { apps: AppView[] }) {
             <Row label="Sound" hint="Played for new messages, except silent and low-priority ones">
               <Switch label="Sound" checked={ui.sound} onChange={(v) => ui.set({ sound: v })} />
             </Row>
+            <Row label="Sound theme" hint="For this device. Other devices keep their own choice.">
+              <select
+                aria-label="Sound theme"
+                className={selectClass}
+                value={ui.soundTheme ?? ""}
+                onChange={(e) => ui.set({ soundTheme: (e.target.value || null) as SoundTheme | null })}
+              >
+                <option value="">Follow server ({themeLabel(serverTheme)})</option>
+                {SOUND_THEMES.map((t) => (
+                  <option key={t} value={t}>
+                    {themeLabel(t)}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <div className="flex flex-wrap gap-1.5 pt-1 pb-2.5" role="group" aria-label={`Preview the ${themeLabel(theme)} theme`}>
+              {SOUNDS.map((s) => (
+                <button
+                  key={s.name}
+                  title={s.meaning}
+                  onClick={() => playSound(s.name, theme)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-full bg-pill px-3 text-[12.5px] font-medium text-ink-2 transition hover:bg-active hover:text-ink"
+                >
+                  <Play className="size-3" />
+                  {s.name}
+                </button>
+              ))}
+            </div>
+            {isAdmin && (
+              <Row label="Server sound theme" hint="For everyone whose device follows the server">
+                <select
+                  aria-label="Server sound theme"
+                  className={selectClass}
+                  value={serverTheme}
+                  disabled={setServerTheme.isPending}
+                  onChange={(e) => setServerTheme.mutate(e.target.value as SoundTheme)}
+                >
+                  {SOUND_THEMES.map((t) => (
+                    <option key={t} value={t}>
+                      {themeLabel(t)}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            )}
             {pushToggle.error && <p className="mt-2 text-[12.5px] text-urgent">{pushToggle.error.message}</p>}
+            {setServerTheme.error && <p className="mt-2 text-[12.5px] text-urgent">{setServerTheme.error.message}</p>}
 
             <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-panel shadow-soft">
               {apps.length === 0 && <p className="px-4 py-3 text-[13px] text-ink-3">No apps yet.</p>}

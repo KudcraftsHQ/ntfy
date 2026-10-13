@@ -432,3 +432,61 @@ func TestCatalog_HistoryDaysAndWeakETag(t *testing.T) {
 	h["If-None-Match"] = `"other"`
 	require.Equal(t, 200, request(t, s, "GET", "/v1/catalog", "", h).Code)
 }
+
+func TestCatalog_SoundThemeAndNewClasses(t *testing.T) {
+	s := newTestCatalogServer(t)
+	publishWith(t, s, "facemap-orders", "facemap", map[string]string{"X-App-Sound": "done", "X-Sound": "cash"})
+	publishWith(t, s, "facemap-ci", "facemap", map[string]string{"X-Sound": "fail"})
+	require.Nil(t, s.catalog.reload())
+	c := getCatalog(t, s, "ops")
+	require.Equal(t, "cabin", c.SoundTheme)
+	require.Equal(t, "done", c.Apps[0].Sound)
+	require.Equal(t, "fail", c.Apps[0].Topics[0].Sound)
+	require.Equal(t, "cash", c.Apps[0].Topics[1].Sound)
+	rr := request(t, s, "PUT", "/v1/catalog/topics/facemap-ci", `{"sound":"ask"}`, catalogAuth("admin"))
+	require.Equal(t, 200, rr.Code, rr.Body.String())
+
+	// Sounds: any signed-in user, not anonymous
+	rr = request(t, s, "GET", "/v1/catalog/sounds", "", catalogAuth("partner"))
+	require.Equal(t, 200, rr.Code, rr.Body.String())
+	var sounds apiCatalogSoundsResponse
+	require.Nil(t, json.NewDecoder(rr.Body).Decode(&sounds))
+	require.Equal(t, "cabin", sounds.Theme)
+	require.Equal(t, "cabin", sounds.DefaultTheme)
+	require.Equal(t, []string{"wood", "glass", "soft", "chip", "pluck", "keys", "space", "cabin", "cockpit", "terminal"}, sounds.Themes)
+	names := make([]string, 0)
+	for _, sound := range sounds.Sounds {
+		require.NotEmpty(t, sound.Meaning)
+		names = append(names, sound.Name)
+	}
+	require.Equal(t, []string{"default", "alert", "urgent", "cash", "done", "fail", "ask"}, names)
+	require.Equal(t, 401, request(t, s, "GET", "/v1/catalog/sounds", "", nil).Code)
+
+	// Settings: admin only, closed set
+	require.Equal(t, 401, request(t, s, "PUT", "/v1/catalog/settings", `{"sound_theme":"cockpit"}`, catalogAuth("ops")).Code)
+	rr = request(t, s, "PUT", "/v1/catalog/settings", `{"sound_theme":"loud"}`, catalogAuth("admin"))
+	require.Equal(t, 400, rr.Code)
+	require.Equal(t, 40086, toHTTPError(t, rr.Body.String()).Code)
+
+	// A theme change is a new ETag and a sync event for everyone
+	partner, err := s.userManager.User("partner")
+	require.Nil(t, err)
+	etag := request(t, s, "GET", "/v1/catalog", "", catalogAuth("partner")).Header().Get("ETag")
+	version := s.catalog.currentVersion()
+	stream := httptest.NewRecorder()
+	cancel := subscribe(t, s, "/"+partner.SyncTopic+"/json?auth="+authParam("partner"), stream)
+	rr = request(t, s, "PUT", "/v1/catalog/settings", `{"sound_theme":"cockpit"}`, catalogAuth("admin"))
+	cancel()
+	require.Equal(t, 200, rr.Code, rr.Body.String())
+	require.Contains(t, stream.Body.String(), `{\"event\":\"sync\"}`)
+	require.JSONEq(t, `{"sound_theme":"cockpit"}`, rr.Body.String())
+	require.Greater(t, s.catalog.currentVersion(), version)
+	h := catalogAuth("partner")
+	h["If-None-Match"] = etag
+	rr = request(t, s, "GET", "/v1/catalog", "", h)
+	require.Equal(t, 200, rr.Code)
+	require.NotEqual(t, etag, rr.Header().Get("ETag"))
+	require.Equal(t, "cockpit", getCatalog(t, s, "partner").SoundTheme)
+	rr = request(t, s, "GET", "/v1/catalog/sounds", "", catalogAuth("partner"))
+	require.Contains(t, rr.Body.String(), `"theme":"cockpit"`)
+}

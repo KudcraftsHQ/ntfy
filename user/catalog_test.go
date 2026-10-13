@@ -141,7 +141,7 @@ func TestCatalog_Validators(t *testing.T) {
 		require.Equal(t, ErrCatalogInvalidIcon, ValidateCatalogIcon(u), u)
 	}
 
-	for _, s := range []string{"silent", "default", "alert", "urgent"} {
+	for _, s := range []string{"silent", "default", "alert", "urgent", "cash", "done", "fail", "ask"} {
 		require.Nil(t, ValidateCatalogSound(s))
 	}
 	require.Equal(t, ErrCatalogInvalidSound, ValidateCatalogSound(""))
@@ -152,4 +152,29 @@ func TestCatalog_Validators(t *testing.T) {
 	require.Equal(t, "Facemap", CatalogTitle("facemap"))
 	require.Equal(t, "Kud Trading", CatalogTitle("kud-trading"))
 	require.True(t, IsSyncTopic("st_abc"))
+}
+
+func TestCatalogStore_SoundTheme(t *testing.T) {
+	_, c, _ := newTestCatalogStore(t)
+	theme, err := c.SoundTheme()
+	require.Nil(t, err)
+	require.Equal(t, "cabin", theme) // default until an admin sets one
+
+	require.Equal(t, ErrCatalogInvalidTheme, c.SetSoundTheme("loud"))
+	require.Equal(t, ErrCatalogInvalidTheme, c.SetSoundTheme(""))
+	for _, name := range CatalogSoundThemes() {
+		require.Nil(t, c.SetSoundTheme(name))
+		theme, err = c.SoundTheme()
+		require.Nil(t, err)
+		require.Equal(t, name, theme)
+	}
+	require.Len(t, CatalogSoundThemes(), 10)
+	require.Len(t, CatalogSoundClasses(), 8)
+
+	// A stored theme this version does not know reads as the default
+	_, err = c.db.Exec(catalogUpsertSettingQuery, catalogSettingSoundTheme, "from-the-future")
+	require.Nil(t, err)
+	theme, err = c.SoundTheme()
+	require.Nil(t, err)
+	require.Equal(t, CatalogSoundThemeDefault, theme)
 }

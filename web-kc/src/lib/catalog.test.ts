@@ -8,6 +8,7 @@ const catalog: Catalog = {
   base_url: BASE,
   history_days: 90,
   sync_topic: "st_1",
+  sound_theme: "cabin",
   apps: [
     {
       id: "facemap",

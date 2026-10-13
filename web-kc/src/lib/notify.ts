@@ -1,16 +1,22 @@
-import ding from "../ding.mp3";
 import type { NtfyMessage, SoundClass } from "./types";
 import { notificationTitle } from "./notify-format";
+import { clipId } from "./sounds";
 import { safeHttpUrl } from "./url";
+
+// Every theme ships in the bundle (70 short clips); only the URLs are loaded up front.
+const clipUrls = import.meta.glob<string>("../sounds/kc_*.mp3", { eager: true, query: "?url", import: "default" });
+const clipUrl = (id: string) => clipUrls[`../sounds/${id}.mp3`];
 
 let audio: HTMLAudioElement | null = null;
 
-export function playSound(sound: SoundClass) {
-  if (sound === "silent") return;
+/** Plays `kc_<theme>_<sound>`. Unknown theme -> cabin, unknown class -> default, silent -> nothing. */
+export function playSound(sound: SoundClass, theme: unknown) {
+  const id = clipId(theme, sound);
+  const url = id && clipUrl(id);
+  if (!url) return;
   try {
-    audio ??= new Audio(ding);
-    audio.currentTime = 0;
-    audio.volume = sound === "urgent" ? 1 : 0.7;
+    audio?.pause();
+    audio = new Audio(url);
     void audio.play().catch(() => undefined); // autoplay may be blocked until first interaction
   } catch {
     /* no audio support */

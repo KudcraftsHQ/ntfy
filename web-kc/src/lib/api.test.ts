@@ -19,5 +19,18 @@ describe("normalizeCatalog (server shape from KudcraftsHQ/ntfy#2)", () => {
     expect(c.apps[1].sound).toBe("default");
     expect(c.apps[1].topics[0]).toMatchObject({ sound: "default", permission: "read-only" });
     expect(c.history_days).toBe(0);
+    expect(c.sound_theme).toBe("cabin"); // a server from before sound themes
+  });
+
+  it("keeps known themes and classes, and maps unknown ones to cabin and default", () => {
+    const raw = {
+      sound_theme: "cockpit",
+      apps: [{ id: "a", name: "A", icon: "", sound: "siren", topics: [{ topic: "a-x", name: "", sound: "cash", permission: "read-only" }, { topic: "a-y", name: "", sound: "", permission: "read-only" }] }],
+    } as unknown as Catalog;
+    const c = normalizeCatalog(raw);
+    expect(c.sound_theme).toBe("cockpit");
+    expect(c.apps[0].sound).toBe("default");
+    expect(c.apps[0].topics.map((t) => t.sound)).toEqual(["cash", "default"]);
+    expect(normalizeCatalog({ ...raw, sound_theme: "from-the-future" } as unknown as Catalog).sound_theme).toBe("cabin");
   });
 });

@@ -18,6 +18,7 @@ export const catalog = {
   base_url: "",
   history_days: 90,
   sync_topic: "st_mocksync",
+  sound_theme: "cabin",
   apps: [
     { id: "coolify", name: "Coolify", icon: ICON.coolify, sound: "default", topics: [{ topic: "coolify", name: "", sound: "default", permission: "read-only" }] },
     {

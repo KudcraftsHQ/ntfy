@@ -18,7 +18,7 @@ Repos: `/Users/hammashamzah/Projects/ntfy` (Go server + `web/`), `/Users/hammash
 | D6 | **Reuse the per-user sync topic** (`account.sync_topic`) to push `{"event":"sync"}` when a user's catalog view changes; clients also poll `/v1/catalog` every 15 min with `ETag`. | Seconds-level propagation with existing plumbing; polling covers missed events. |
 | D7 | Catalog tables are created with `CREATE TABLE IF NOT EXISTS` at startup, **outside** ntfy's schema migrations; `schemaVersion` stays 9. | `db/schema/schema.go` `Migrate()` returns an error if the stored version is greater than the binary's target, so bumping it would break rollback to the official image. Unknown tables are never touched. **Verified.** |
 | D8 | Android: **one notification channel per (app, sound class)**, not per topic; channel id embeds the sound class. | Per-topic channels explode the settings list; Android channels are immutable after creation, so a changed default needs a new channel id, not an edit. |
-| D9 | Four **sound classes**: `silent`, `default`, `alert`, `urgent`; each client maps them to its platform (bundled OGG on Android, bundled CAF on macOS, `ms-winsoundevent:` on Windows). | A closed set keeps the catalog portable; file names/URLs in the catalog would be an injection surface. |
+| D9 | Eight **sound classes**: `silent`, `default`, `alert`, `urgent`, `cash`, `done`, `fail`, `ask` (the last four and the **sound themes** were added in revision 2, see §20); each client maps them to its platform (bundled OGG on Android, bundled CAF on macOS, `ms-winsoundevent:` on Windows). | A closed set keeps the catalog portable; file names/URLs in the catalog would be an injection surface. |
 | D10 | Retention = `cache-duration: 2160h` (90 d). `history_days` in the catalog response is derived from it; clients backfill with `since=all` on first sync. | One knob; the server already enforces expiry per message. |
 | D11 | The server injects the app icon into messages that have none (`m.Icon = app.icon`), behind its own setting `catalog-inject-icon` (`NTFY_CATALOG_INJECT_ICON`), **default on**; only active when `enable-catalog` is on. | Stock clients (and notifications on every platform) show the app icon with no client change. |
 | D12 | Fork branch `kudcrafts` is cut from tag **`v2.28.0`** (what production runs), not from upstream `main`; versions `v2.28.0-kc.N`. | Rollback is a pure image swap; `main` has moved (46 commits, cluster work) and its cache schema may differ. |
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS catalog_app (
   id        TEXT PRIMARY KEY,                 -- ^[a-z0-9][a-z0-9-]{0,31}$
   name      TEXT NOT NULL,                    -- 1..64 chars, display name
   icon      TEXT NOT NULL DEFAULT '',         -- '' or https URL <= 512 chars
-  sound     TEXT NOT NULL DEFAULT 'default',  -- silent|default|alert|urgent
+  sound     TEXT NOT NULL DEFAULT 'default',  -- a sound class (D9, §20)
   locked    INT  NOT NULL DEFAULT 0,          -- 1 = admin-set; publishers cannot change
   created   INT  NOT NULL,
   updated   INT  NOT NULL
@@ -66,7 +66,7 @@ Types (in `user/catalog.go`):
 ```go
 type CatalogApp   struct { ID, Name, Icon, Sound string; Locked bool; Created, Updated int64 }
 type CatalogTopic struct { Topic, AppID, Name, Sound string; Hidden, Locked bool; Created, Updated, LastPublish int64 }
-var catalogSounds = []string{"silent", "default", "alert", "urgent"}
+var catalogSounds = []string{"silent", "default", "alert", "urgent", "cash", "done", "fail", "ask"}
 ```
 
 ---
@@ -84,6 +84,7 @@ Auth: `ensureUser` (401 if anonymous, 404 if `enable-catalog` is off). Rate-limi
   "base_url": "https://ntfy.kudcrafts.com",
   "history_days": 90,                   // floor(cache-duration / 24h)
   "sync_topic": "st_abc…",              // the caller's account sync topic (same as /v1/account)
+  "sound_theme": "cabin",               // server-wide sound theme (§20); absent on older servers = "cabin"
   "apps": [
     {
       "id": "facemap", "name": "FaceMap",
@@ -104,6 +105,7 @@ Rules: `topics[].sound` is already resolved (topic override or app default, neve
 - `DELETE /v1/catalog/apps/{id}` — 409 (`40907 app still has topics`) unless `?force=1`, which also deletes its topics.
 - `PUT /v1/catalog/topics/{topic}` body `{"app":"facemap","name":"Orders","sound":"alert","hidden":false}` — upsert, sets `locked=1`; `app` must satisfy D3 or `40034`; creates the app row if missing (`name` = Title-cased id).
 - `DELETE /v1/catalog/topics/{topic}` — 200; the topic will re-register on the next publish unless its app is locked **and** `hidden` was set (so: to permanently hide, `PUT … "hidden":true`).
+- `PUT /v1/catalog/settings` body `{"sound_theme":"cockpit"}` — sets the server-wide sound theme (§20); `40086` on an unknown theme. 200 → `{"sound_theme":"cockpit"}`.
 Admin edits call `catalog.reload()` immediately (see 3.4).
 
 ### 3.3 `GET /v1/account` (existing, 3-line hook)
@@ -148,6 +150,9 @@ ntfy catalog app rm ID [--force]
 ntfy catalog topic set TOPIC [--app ID] [--name N] [--sound CLASS|inherit] [--hidden|--visible] [--unlock]
 ntfy catalog topic rm TOPIC
 ntfy catalog users                            # admin check: each user → the topics they would see (uses Authorize)
+ntfy catalog sounds                           # the sound classes and what they mean
+ntfy catalog theme                            # the current sound theme and the ten to pick from
+ntfy catalog theme set NAME                   # change it for every client that follows the server
 ```
 `set` locks the row unless `--unlock` is given. Validation identical to section 4 (shared helpers in `user/catalog.go`: `ValidateCatalogAppID`, `ValidateCatalogName`, `ValidateCatalogIcon`, `ValidateCatalogSound`).
 
@@ -323,7 +328,7 @@ Identical to section 8 items 2–4: `CatalogSync.Reconcile` (pure, in `NtfyBar.C
 
 ## 14. Shared interface contract (all builders)
 
-1. `GET /v1/catalog` JSON exactly as 3.1; `version` monotonic ms; `history_days` int ≥ 1; `sync_topic` string; sounds ∈ `silent|default|alert|urgent`, always resolved per topic.
+1. `GET /v1/catalog` JSON exactly as 3.1; `version` monotonic ms; `history_days` int ≥ 1; `sync_topic` string; sounds ∈ `silent|default|alert|urgent|cash|done|fail|ask`, always resolved per topic; `sound_theme` per §20.
 2. `GET /v1/account.subscriptions` includes virtual catalog entries (`display_name` = topic name or `null`).
 3. Sync signal: a message on `sync_topic` whose body is `{"event":"sync"}` → client refetches `/v1/catalog` (and account, where applicable). Clients also refetch every 15 min with `If-None-Match`, on launch, on resume/wake, and on every stream (re)connect.
 4. Token minting: `POST /v1/account/token` with Basic auth, body `{"label":"<client>-<device>","expires":0}` → `{"token":"tk_…"}`; send as `Authorization: Bearer tk_…`. **`"expires":0` is required**: without it the server applies its 72 h default (`tokenExpiryDuration`) and the device silently goes dark on day 3. `0` = never expires; the token stays revocable per device in Account → Access tokens. (rev 2.1, from the pre-deploy review)
@@ -364,3 +369,40 @@ Layout: `ntfy-bar-windows.sln`; `src/NtfyBar.Core/` (`Models.cs` AppSettings/Top
 3. Icon injection: **a setting, `catalog-inject-icon` / `NTFY_CATALOG_INJECT_ICON`, default on.** Decided (see D11, §4 step 4).
 4. Sync fan-out window: **30 s reload** (default kept; no objection).
 5. Sound files: **synthesize three short clips in CI with `sox`**, swap for designed sounds later (default kept; no objection).
+
+---
+
+## 20. Sound themes (revision 2)
+
+Every client ships all ten themes and plays the clip `kc_<theme>_<sound>`. This replaces the three placeholder clips of decision 5 in §19 and extends D8/D9.
+
+**Vocabulary (closed sets, validated server-side in `user/catalog.go`).**
+
+| Sound class | Meaning |
+|---|---|
+| `silent` | No sound (no clip) |
+| `default` | Ordinary message |
+| `alert` | Look at this soon |
+| `urgent` | Prod broken, money at risk |
+| `cash` | Order paid |
+| `done` | Job or agent finished |
+| `fail` | Build, deploy or job failed |
+| `ask` | An agent needs an answer |
+
+Themes: `wood`, `glass`, `soft`, `chip`, `pluck`, `keys`, `space`, `cabin`, `cockpit`, `terminal`. Default: `cabin`. 10 themes × 7 sounds = 70 clips.
+
+**Server.**
+- One server-wide setting `sound_theme` in a third catalog table in `user.db`, `catalog_setting (key TEXT PRIMARY KEY, value TEXT NOT NULL)`, created with `CREATE TABLE IF NOT EXISTS` like the other two (no schema version bump). No row = `cabin`; a stored value this build does not know also reads as `cabin`.
+- `GET /v1/catalog` carries `sound_theme`. It is part of the content hash, the per-user ETag and every user's view hash, so a change bumps `version`, is never a 304, and sends a sync event to every user.
+- `GET /v1/catalog/sounds` (same auth as `GET /v1/catalog`) → `{"theme":"cabin","default_theme":"cabin","themes":[…10…],"sounds":[{"name":"default","meaning":"Ordinary message"},…]}`. `sounds` lists the seven classes that have a clip; `silent` is not in it.
+- `PUT /v1/catalog/settings` (admin) and `ntfy catalog theme set NAME` change it; the CLI write is picked up by the 30 s reload.
+- The new classes are accepted wherever a class is: app default, topic override, `X-App-Sound`, `X-Sound`, `--sound`. There is no per-message sound: `X-Sound` still sets the topic's class.
+
+**Every client.**
+- Theme = this device's override if set, else the server's `sound_theme`, else `cabin`. Sound = the resolved class of the topic. Unknown theme → `cabin`; unknown class → `default`.
+- Settings has a "Sound theme" picker: "Follow server (<name>)" (the default) plus the ten themes, stored per device, with a preview of the seven clips. The per-device override is how the phone and the Mac can sound different.
+- A catalog without `sound_theme` (older server) means `cabin`.
+
+**Clips.** Synthesized by `docs/kudcrafts/sounds/synth.js`, rendered by `build.js` (`node build.js`, needs `ffmpeg`; writes `sounds/{wav,ogg,caf,mp3}/` and `manifest.json` next to itself). OGG goes to Android `res/raw`, CAF (16-bit PCM, mono, 44.1 kHz) to ntfy-bar `Resources/Sounds`, MP3 to `web-kc/src/sounds/`. The shipped clips are committed in each client; do not re-encode them for a release.
+
+**Clients released before this revision** get the new classes as soon as an admin assigns one. web-kc (before this revision) plays its single bundled ding for every class that is not `silent`, so they are simply audible; the other clients document their own answer in their PRs. Windows keeps its `ms-winsoundevent` mapping (§9.1) and has no themes.

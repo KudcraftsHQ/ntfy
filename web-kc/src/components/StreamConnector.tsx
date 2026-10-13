@@ -8,9 +8,10 @@ import { playSound, showNotification } from "../lib/notify";
 import { pushState } from "../lib/push";
 import { currentToken } from "../lib/session";
 import { isSyncEvent, parseLine, retryDelay } from "../lib/stream";
-import { recheckAccess, refreshCatalog } from "../lib/sync";
+import { resolveSoundTheme } from "../lib/sounds";
+import { qk, recheckAccess, refreshCatalog } from "../lib/sync";
 import { useUi } from "../store/ui";
-import type { AppView, TopicView } from "../lib/types";
+import type { AppView, Catalog, TopicView } from "../lib/types";
 
 export type StreamStatus = "connecting" | "live" | "offline";
 
@@ -61,7 +62,8 @@ export function StreamConnector({ appsRef, syncTopic, onStatus }: { appsRef: Ref
       const ui = useUi.getState();
       const { notify, sound } = shouldAlert(ui.mutes, entry.t, m.priority);
       if (!notify) return;
-      if (ui.sound) playSound(sound);
+      // Read at message time, so a theme change (here or on the server) applies to the next message.
+      if (ui.sound) playSound(sound, resolveSoundTheme(ui.soundTheme, qc.getQueryData<Catalog | null>(qk.catalog)?.sound_theme));
       const visible = document.visibilityState === "visible" && document.hasFocus();
       // When web push is on, the service worker already shows the notification.
       if (!visible && !pushOn && ui.notify) void showNotification(m, entry.t.name, entry.app.icon);
