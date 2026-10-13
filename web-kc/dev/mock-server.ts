@@ -57,11 +57,16 @@ Bun.serve<{ topics: string[] }>({
     if (p.startsWith("/v1/")) {
       if (!authed(req, url)) return deny();
       if (p === "/v1/account")
-        return json({ username: user.name, role: "user", sync_topic: catalog.sync_topic, subscriptions: userSubs.map((topic) => ({ base_url: url.origin, topic, display_name: null })) });
+        return json({ username: user.name, role: "admin", sync_topic: catalog.sync_topic, subscriptions: userSubs.map((topic) => ({ base_url: url.origin, topic, display_name: null })) });
       if (p === "/v1/catalog") {
         const etag = `"mock-${catalog.version}"`;
         if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { ETag: etag } });
         return Response.json({ ...catalog, base_url: url.origin }, { headers: { ETag: etag, "Access-Control-Expose-Headers": "ETag" } });
+      }
+      if (p === "/v1/catalog/settings" && req.method === "PUT") {
+        const theme = ((await req.json()) as { sound_theme?: string }).sound_theme;
+        if (theme) Object.assign(catalog, { sound_theme: theme, version: Date.now() });
+        return json({ sound_theme: catalog.sound_theme });
       }
       if (p === "/v1/account/subscription" && req.method === "DELETE") {
         userSubs = userSubs.filter((t) => t !== req.headers.get("x-topic"));

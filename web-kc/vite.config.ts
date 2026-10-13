@@ -23,7 +23,8 @@ export default defineConfig({
       filename: "sw.ts",
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,mp3}"],
-        globIgnores: ["config.js", "**/inter-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese}-*"],
+        // Sound clips (70, one per theme and class) are fetched when first played, not precached.
+        globIgnores: ["config.js", "**/kc_*.mp3", "**/inter-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese}-*"],
         // index.html is renamed to app.html when copied into server/site (see scripts/to-site.ts)
         manifestTransforms: [
           (entries) => ({

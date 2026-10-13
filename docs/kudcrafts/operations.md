@@ -37,6 +37,11 @@ Fork branch `kudcrafts` of KudcraftsHQ/ntfy, cut from upstream tag `v2.28.0`. Im
   - The catalog tables (`catalog_app`, `catalog_topic`) are created with `CREATE TABLE IF NOT EXISTS`
     outside ntfy's migrations; `schemaVersion` stays 9. The official image ignores them. Re-enabling the fork
     later resumes with the data intact. To remove them: `sqlite3 user.db 'DROP TABLE catalog_topic; DROP TABLE catalog_app;'`.
+  - The sound theme lives in a third such table, `catalog_setting` (same rules, also ignored by the official
+    image and by older fork builds). Rolling back to a fork build from before sound themes: the theme row is
+    kept but unused, and topics set to `cash`/`done`/`fail`/`ask` stay stored and are still served. That older
+    build only refuses to *write* them again (`40083`), so an edit of such an app or topic must name one of
+    the four old classes. Clients fall back to their default sound for a class they do not know.
   - `cache.db` is unchanged in shape. Messages published with a 90-day expiry keep it under the official
     image too (expiry is stamped per message at publish), and are pruned as they expire. If you also set
     `cache-duration` back to 12h, new messages get 12h; old ones keep their 90-day stamp.
@@ -56,13 +61,26 @@ ntfy catalog topic set facemap-orders --sound inherit
 ntfy catalog topic set facemap-debug --hidden      # never listed (deleting it would re-register on next publish)
 ntfy catalog topic rm facemap-orders
 ntfy catalog users                                 # each user -> topics they would see (ro/rw)
+ntfy catalog sounds                                # sound classes and what they mean
+ntfy catalog theme                                 # current sound theme + the ten themes
+ntfy catalog theme set cockpit                     # every client that follows the server switches
 ```
 
 `set` locks the row (publishers can no longer change it via headers) unless `--unlock` is given. Flags may
 come before or after the ID. A running server picks up CLI changes within 30 s and pushes a sync event to
 every user whose view changed.
 
-Sound classes: `silent`, `default`, `alert`, `urgent`. App ids: `^[a-z0-9][a-z0-9-]{0,31}$`. A topic belongs
+Sound classes: `silent`, `default` (ordinary message), `alert` (look at this soon), `urgent` (prod broken,
+money at risk), `cash` (order paid), `done` (job or agent finished), `fail` (build, deploy or job failed),
+`ask` (an agent needs an answer).
+
+Sound themes: `wood`, `glass`, `soft`, `chip`, `pluck`, `keys`, `space`, `cabin` (default), `cockpit`,
+`terminal`. The server holds one theme for everybody; each device can override it in its own settings
+("Sound theme", default "Follow server"). A theme change reaches clients within seconds (sync event). The
+clips ship inside the clients, so a theme or class a client does not know plays as `cabin` / `default`.
+Clients released before the themes existed keep working: see `catalog-spec.md` §20.
+
+App ids: `^[a-z0-9][a-z0-9-]{0,31}$`. A topic belongs
 to app `X` only if it is `X` or starts with `X-`.
 
 ## Admin API (admin users)
@@ -72,10 +90,12 @@ curl -u hammas:… -X PUT https://ntfy.kudcrafts.com/v1/catalog/apps/facemap -d 
 curl -u hammas:… -X PUT https://ntfy.kudcrafts.com/v1/catalog/topics/facemap-orders -d '{"name":"Orders","sound":"urgent","hidden":false}'
 curl -u hammas:… -X DELETE 'https://ntfy.kudcrafts.com/v1/catalog/apps/facemap?force=1'
 curl -u hammas:… 'https://ntfy.kudcrafts.com/v1/catalog?all=1'      # includes hidden topics + locked/hidden fields
+curl -u hammas:… -X PUT https://ntfy.kudcrafts.com/v1/catalog/settings -d '{"sound_theme":"cockpit"}'
+curl -u hammas:… https://ntfy.kudcrafts.com/v1/catalog/sounds      # any signed-in user: theme, themes, classes
 ```
 
 Error codes (kudcrafts range): 40080 app id, 40081 name, 40082 icon, 40083 sound, 40084 app is not a prefix
-of topic, 40085 topic, 40480 not found, 40980 app still has topics.
+of topic, 40085 topic, 40086 sound theme, 40480 not found, 40980 app still has topics.
 
 ## Publishers: registering an app
 

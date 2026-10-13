@@ -65,6 +65,11 @@ switching back just means signing in again on the stock UI.
 - Web push: `POST/DELETE /v1/webpush` with every readable topic except muted ones. The service worker
   reads topic titles, icons and sound classes from IndexedDB (written by the app), and shows
   priority ≤ 2 and `silent` topics without sound.
+- Sound: while a tab is open, a new message plays `kc_<theme>_<class>.mp3` (`src/sounds/`, 70 clips, all
+  themes bundled, fetched on first play and not precached). Theme = this device's choice in Settings
+  ("Sound theme", stored in `kc.prefs`), else the catalog's `sound_theme`, else `cabin`; unknown theme →
+  `cabin`, unknown class → `default`. Settings previews the seven clips, and an admin can also set the
+  server theme there (`PUT /v1/catalog/settings`). Web push notifications use the browser's own sound.
 - Tokens: the login token is extended hourly with `PATCH /v1/account/token`, also in hidden tabs.
   Any 401 runs the same cleanup as sign-out: web push unsubscribed, cached messages cleared, query
   cache dropped. The IndexedDB cache (`kc-ntfy`) is tied to one username and cleared when another signs in.

@@ -123,3 +123,36 @@ func TestCLI_Serve_CatalogRequiresAuthFile(t *testing.T) {
 	err = app.Run([]string{"ntfy", "serve", "--config=" + configFile, "--listen-http=:0", "--auth-file=" + filepath.Join(t.TempDir(), "user.db"), "--enable-catalog"})
 	require.ErrorContains(t, err, "enable-catalog requires base-url")
 }
+
+func TestCLI_Catalog_ThemeAndSounds(t *testing.T) {
+	s, conf, port := newTestServerWithAuth(t)
+	defer test.StopServer(t, s, port)
+
+	app, _, stdout, _ := newTestApp()
+	require.Nil(t, runCatalogCommand(app, conf, "theme"))
+	require.Contains(t, stdout.String(), "sound theme: cabin")
+	require.Contains(t, stdout.String(), "- cabin (current) (default)")
+	require.Contains(t, stdout.String(), "- terminal")
+
+	app, _, _, _ = newTestApp()
+	require.ErrorContains(t, runCatalogCommand(app, conf, "theme", "set", "loud"), "invalid sound theme")
+	app, _, stdout, _ = newTestApp()
+	require.Nil(t, runCatalogCommand(app, conf, "theme", "set", "cockpit"))
+	require.Contains(t, stdout.String(), "sound theme set to cockpit")
+	app, _, stdout, _ = newTestApp()
+	require.Nil(t, runCatalogCommand(app, conf, "theme"))
+	require.Contains(t, stdout.String(), "sound theme: cockpit")
+	require.Contains(t, stdout.String(), "- cockpit (current)")
+
+	app, _, stdout, _ = newTestApp()
+	require.Nil(t, runCatalogCommand(app, conf, "sounds"))
+	require.Regexp(t, `cash\s+Order paid`, stdout.String())
+	require.Regexp(t, `silent\s+No sound`, stdout.String())
+
+	app, _, stdout, _ = newTestApp()
+	require.Nil(t, runCatalogCommand(app, conf, "app", "set", "facemap", "--sound", "done"))
+	require.Contains(t, stdout.String(), "sound: done")
+	app, _, stdout, _ = newTestApp()
+	require.Nil(t, runCatalogCommand(app, conf, "topic", "set", "facemap-ci", "--sound", "fail"))
+	require.Contains(t, stdout.String(), "sound: fail")
+}

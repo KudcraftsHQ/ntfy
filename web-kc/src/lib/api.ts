@@ -1,8 +1,9 @@
 import { config } from "./config";
 import { clearLocalSession } from "./auth";
 import { currentToken } from "./session";
+import { toSoundClass, toSoundTheme } from "./sounds";
 import { parseNdjson } from "./stream";
-import type { Account, Catalog, NtfyMessage } from "./types";
+import type { Account, Catalog, NtfyMessage, SoundTheme } from "./types";
 
 export class HttpError extends Error {
   constructor(
@@ -81,12 +82,13 @@ export function normalizeCatalog(raw: Catalog): Catalog {
     ...raw,
     history_days: typeof raw.history_days === "number" ? raw.history_days : 0,
     sync_topic: raw.sync_topic || "",
+    sound_theme: toSoundTheme(raw.sound_theme),
     apps: (raw.apps ?? []).map((a) => ({
       ...a,
       name: a.name || a.id,
       icon: a.icon || "",
-      sound: a.sound || "default",
-      topics: (a.topics ?? []).map((t) => ({ ...t, name: t.name || "", sound: t.sound || a.sound || "default", permission: t.permission === "read-write" ? "read-write" : "read-only" })),
+      sound: toSoundClass(a.sound),
+      topics: (a.topics ?? []).map((t) => ({ ...t, name: t.name || "", sound: toSoundClass(t.sound, toSoundClass(a.sound)), permission: t.permission === "read-write" ? "read-write" : "read-only" })),
     })),
   };
 }
@@ -112,6 +114,12 @@ export async function fetchCatalog(): Promise<Catalog | null> {
     }
     throw e;
   }
+}
+
+/** PUT /v1/catalog/settings (admin only): the theme every client that follows the server plays. */
+export async function setServerSoundTheme(theme: SoundTheme) {
+  await request("/v1/catalog/settings", { method: "PUT", body: JSON.stringify({ sound_theme: theme }) });
+  catalogCache = null;
 }
 
 /** GET /<topic>/auth: can this account read the topic? 401 (bad token) throws and signs out. */

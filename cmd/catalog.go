@@ -24,7 +24,7 @@ func init() {
 var cmdCatalog = &cli.Command{
 	Name:      "catalog",
 	Usage:     "Show/edit the app and topic catalog (kudcrafts)",
-	UsageText: "ntfy catalog [app|topic|users] ...",
+	UsageText: "ntfy catalog [app|topic|theme|sounds|users] ...",
 	Flags:     flagsUser,
 	Before:    initConfigFileInputSourceFunc("config", flagsUser, initLogFunc),
 	Action:    execCatalogList,
@@ -47,6 +47,9 @@ Examples:
   ntfy catalog topic set facemap-debug --hidden            # Never list this topic
   ntfy catalog topic rm facemap-orders
   ntfy catalog users                                       # What each user would see
+  ntfy catalog sounds                                      # Sound classes and what they mean
+  ntfy catalog theme                                       # Current sound theme, and the themes to pick from
+  ntfy catalog theme set cockpit                           # Change the sound theme for every client
 `,
 	Subcommands: []*cli.Command{
 		{
@@ -61,7 +64,7 @@ Examples:
 					Flags: []cli.Flag{
 						&cli.StringFlag{Name: "name", Usage: "display name (1-64 chars)"},
 						&cli.StringFlag{Name: "icon", Usage: "icon URL (https only, or \"\" to clear)"},
-						&cli.StringFlag{Name: "sound", Usage: "sound class: silent, default, alert, urgent"},
+						&cli.StringFlag{Name: "sound", Usage: "sound class, see 'ntfy catalog sounds' (silent, default, alert, urgent, cash, done, fail, ask)"},
 						&cli.BoolFlag{Name: "unlock", Usage: "leave the app unlocked, so publishers may change it"},
 					},
 				},
@@ -89,7 +92,7 @@ Examples:
 					Flags: []cli.Flag{
 						&cli.StringFlag{Name: "app", Usage: "app ID; must be a prefix of the topic (app or app-...)"},
 						&cli.StringFlag{Name: "name", Usage: "display name (1-64 chars, or \"\" to show the topic id)"},
-						&cli.StringFlag{Name: "sound", Usage: "sound class: silent, default, alert, urgent, or inherit"},
+						&cli.StringFlag{Name: "sound", Usage: "sound class, see 'ntfy catalog sounds' (silent, default, alert, urgent, cash, done, fail, ask), or inherit"},
 						&cli.BoolFlag{Name: "hidden", Usage: "never list this topic"},
 						&cli.BoolFlag{Name: "visible", Usage: "list this topic again"},
 						&cli.BoolFlag{Name: "unlock", Usage: "leave the topic unlocked, so publishers may change it"},
@@ -103,6 +106,25 @@ Examples:
 					Action:    execCatalogTopicRemove,
 				},
 			},
+		},
+		{
+			Name:      "theme",
+			Usage:     "Show or set the sound theme that clients follow",
+			UsageText: "ntfy catalog theme [set NAME]",
+			Action:    execCatalogTheme,
+			Subcommands: []*cli.Command{
+				{
+					Name:      "set",
+					Usage:     "Set the sound theme",
+					UsageText: "ntfy catalog theme set NAME",
+					Action:    execCatalogThemeSet,
+				},
+			},
+		},
+		{
+			Name:   "sounds",
+			Usage:  "List the sound classes and what they mean",
+			Action: execCatalogSounds,
 		},
 		{
 			Name:   "users",
@@ -491,4 +513,62 @@ func execCatalogUsers(c *cli.Context) error {
 		}
 	}
 	return nil
+}
+
+func execCatalogTheme(c *cli.Context) error {
+	if c.NArg() > 0 {
+		return errors.New("usage: ntfy catalog theme [set NAME]")
+	}
+	manager, store, err := openCatalog(c)
+	if err != nil {
+		return err
+	}
+	defer manager.Close()
+	current, err := store.SoundTheme()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.App.Writer, "sound theme: %s\n", current)
+	for _, theme := range user.CatalogSoundThemes() {
+		note := ""
+		if theme == current {
+			note = " (current)"
+		}
+		if theme == user.CatalogSoundThemeDefault {
+			note += " (default)"
+		}
+		fmt.Fprintf(c.App.Writer, "- %s%s\n", theme, note)
+	}
+	return nil
+}
+
+func execCatalogThemeSet(c *cli.Context) error {
+	theme := c.Args().Get(0)
+	if theme == "" || c.NArg() > 1 {
+		return errors.New("usage: ntfy catalog theme set NAME")
+	} else if err := user.ValidateCatalogSoundTheme(theme); err != nil {
+		return fmt.Errorf("%s: %w", theme, err)
+	}
+	manager, store, err := openCatalog(c)
+	if err != nil {
+		return err
+	}
+	defer manager.Close()
+	if err := store.SetSoundTheme(theme); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.App.Writer, "sound theme set to %s (clients that follow the server pick it up within 30 seconds)\n", theme)
+	return nil
+}
+
+func execCatalogSounds(c *cli.Context) error {
+	if c.NArg() > 0 {
+		return errors.New("usage: ntfy catalog sounds")
+	}
+	w := tabwriter.NewWriter(c.App.Writer, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "SOUND\tMEANING")
+	for _, s := range user.CatalogSoundClasses() {
+		fmt.Fprintf(w, "%s\t%s\n", s.Name, s.Meaning)
+	}
+	return w.Flush()
 }

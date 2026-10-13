@@ -1,12 +1,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { MuteState } from "../lib/catalog";
+import type { SoundTheme } from "../lib/types";
 
 export type Theme = "system" | "light" | "dark";
 
 interface Prefs {
   theme: Theme;
   sound: boolean;
+  soundTheme: SoundTheme | null; // this device's theme; null follows the server
   notify: boolean; // in-tab desktop notifications (web push is tracked separately by the browser)
   mutes: MuteState;
 }
@@ -27,6 +29,7 @@ export const useUi = create<UiState>()(
     (set) => ({
       theme: "system",
       sound: true,
+      soundTheme: null,
       notify: true,
       mutes: { apps: {}, topics: {} },
       sidebarOpen: false,
@@ -46,7 +49,7 @@ export const useUi = create<UiState>()(
     }),
     {
       name: "kc.prefs",
-      partialize: (s): Prefs => ({ theme: s.theme, sound: s.sound, notify: s.notify, mutes: s.mutes }),
+      partialize: (s): Prefs => ({ theme: s.theme, sound: s.sound, soundTheme: s.soundTheme, notify: s.notify, mutes: s.mutes }),
     },
   ),
 );
